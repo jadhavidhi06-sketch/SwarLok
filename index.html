@@ -49,6 +49,24 @@
     --text: #f5f0e8; --text2: #a09070; --surface: rgba(255,240,200,0.04);
     --surface2: rgba(255,240,200,0.08); --border: rgba(255,240,180,0.09);
   }
+  .vibe-jazz {
+    --bg: #100b0f; --bg2: #1c1218; --accent: #f97316; --accent2: #ea580c;
+    --accent3: #9a3412; --glow: rgba(249,115,22,0.14); --glow2: rgba(249,115,22,0.3);
+    --text: #f5e6db; --text2: #b78c72; --surface: rgba(255,170,120,0.05);
+    --surface2: rgba(255,170,120,0.08); --border: rgba(255,170,120,0.12);
+  }
+  .vibe-rock {
+    --bg: #090909; --bg2: #111112; --accent: #ef4444; --accent2: #dc2626;
+    --accent3: #991b1b; --glow: rgba(239,68,68,0.12); --glow2: rgba(239,68,68,0.28);
+    --text: #f2e8e8; --text2: #aa8383; --surface: rgba(255,150,150,0.04);
+    --surface2: rgba(255,150,150,0.08); --border: rgba(255,150,150,0.12);
+  }
+  .vibe-ambient {
+    --bg: #07131a; --bg2: #0e1d26; --accent: #22d3ee; --accent2: #06b6d4;
+    --accent3: #0e7490; --glow: rgba(34,211,238,0.12); --glow2: rgba(34,211,238,0.28);
+    --text: #ddf4fb; --text2: #7ea7b5; --surface: rgba(100,220,245,0.04);
+    --surface2: rgba(100,220,245,0.08); --border: rgba(100,220,245,0.12);
+  }
   * { margin:0; padding:0; box-sizing:border-box; }
   html { scroll-behavior: smooth; }
   body {
@@ -182,6 +200,51 @@
   }
   .nav-links a:hover { color: var(--accent); }
   .nav-right { display: flex; gap: 1rem; align-items: center; }
+  .theme-menu { position: relative; }
+  .theme-trigger {
+    width: 38px; height: 38px; border-radius: 50%;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 1rem;
+    transition: all 0.3s;
+  }
+  .theme-trigger:hover { border-color: var(--accent); color: var(--accent); }
+  .theme-dropdown {
+    position: absolute; top: calc(100% + 0.5rem); right: 0;
+    width: 220px;
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 0.5rem;
+    display: none;
+    z-index: 120;
+  }
+  .theme-dropdown.open { display: block; }
+  .theme-item {
+    width: 100%;
+    text-align: left;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text2);
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .theme-item:hover, .theme-item.active {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--glow);
+  }
+  .nav-user {
+    border: 1px solid var(--accent2);
+    background: var(--surface2);
+    color: var(--accent);
+  }
   .btn-sm {
     padding: 0.5rem 1.25rem;
     font-family: var(--font-ui);
@@ -930,15 +993,14 @@
     <li><a href="#social-section">Social</a></li>
   </ul>
   <div class="nav-right">
-    <div class="vibe-bar">
-      <span>Vibe:</span>
-      <button class="vibe-pill active" onclick="setVibe('')">Default</button>
-      <button class="vibe-pill" onclick="setVibe('lofi')">Lo-fi</button>
-      <button class="vibe-pill" onclick="setVibe('techno')">Techno</button>
-      <button class="vibe-pill" onclick="setVibe('classical')">Classical</button>
+    <div class="theme-menu">
+      <button class="theme-trigger" id="themeTrigger" onclick="toggleThemeMenu()" title="Themes">🎨</button>
+      <div class="theme-dropdown" id="themeDropdown"></div>
     </div>
-    <button class="btn-sm" onclick="openModal('login')">Sign In</button>
-    <button class="btn-sm btn-primary" onclick="openModal('register')">Join Free</button>
+    <div class="vibe-bar" id="vibeBar"></div>
+    <button class="btn-sm" id="navProfileBtn" onclick="goToProfile()">My Profile</button>
+    <button class="btn-sm" id="navSignInBtn" onclick="openModal('login')">Sign In</button>
+    <button class="btn-sm btn-primary" id="navRegisterBtn" onclick="openModal('register')">Join Free</button>
   </div>
 </nav>
 
@@ -1076,9 +1138,9 @@
         <div style="font-size:0.75rem; color:var(--text2); margin-top:2px; font-family:var(--font-mono);">Room ID: JAM-4829-SWAR</div>
       </div>
       <div style="display:flex; gap:1rem; align-items:center;">
-        <div class="jam-status"><div class="status-dot"></div> Live · 4 listeners</div>
+        <div class="jam-status"><div class="status-dot"></div> <span id="jamStatusText">Offline · 0 listeners</span></div>
         <button class="btn-sm" onclick="copyRoomCode()">Copy Link</button>
-        <button class="btn-sm btn-primary" onclick="showToast('🎵 You are now the host')">Host</button>
+        <button class="btn-sm btn-primary" id="jamToggleBtn" onclick="toggleJamSession()">Start Jam</button>
       </div>
     </div>
     <div class="jam-body">
@@ -1257,55 +1319,49 @@
 <div id="toast"><div id="toast-msg"></div></div>
 
 <script>
-// ─── DATA ───
-const TRACKS = [
-  { name:'Raag Yaman', artist:'Pt. Hariprasad Chaurasia', duration:'32:17', icon:'🎷' },
-  { name:'Bhairavi Ki Raat', artist:'Ustad Rashid Khan', duration:'18:42', icon:'🎶' },
-  { name:'Miles Ahead', artist:'Miles Davis', duration:'5:21', icon:'🎺' },
-  { name:'Gymnopédie No.1', artist:'Erik Satie', duration:'3:03', icon:'🎹' },
-  { name:'Teardrop', artist:'Massive Attack', duration:'5:29', icon:'🌊' },
-  { name:'Arabesque No.1', artist:'Claude Debussy', duration:'4:12', icon:'🌸' },
+// ─── PERSISTED STATE ───
+const STORE_KEYS = {
+  tracks: 'swarlok_tracks',
+  user: 'swarlok_user',
+  theme: 'swarlok_theme',
+  jam: 'swarlok_jam_state',
+  chat: 'swarlok_chat_msgs',
+  analytics: 'swarlok_analytics'
+};
+
+const THEMES = [
+  { key: '', label: 'Default' },
+  { key: 'lofi', label: 'Lo-fi' },
+  { key: 'techno', label: 'Techno' },
+  { key: 'classical', label: 'Classical' },
+  { key: 'jazz', label: 'Jazz Lounge' },
+  { key: 'rock', label: 'Rock Arena' },
+  { key: 'ambient', label: 'Ambient Flow' }
 ];
-const SOULMATES = [
-  { name:'Arjun Mehta', handle:'@raagnista', genres:['Classical','Jazz'], match:94, color:'#7c3aed' },
-  { name:'Priya Krishnan', handle:'@sufisoul', genres:['Sufi','Ambient','Folk'], match:88, color:'#0891b2' },
-  { name:'Dev Anand', handle:'@lo_fi_dev', genres:['Lo-fi','Chillhop'], match:81, color:'#d97706' },
-  { name:'Zara Khan', handle:'@electronica_z', genres:['Techno','Ambient'], match:76, color:'#059669' },
-  { name:'Rohan Sahu', handle:'@sitar_waves', genres:['Classical','Fusion'], match:72, color:'#dc2626' },
-  { name:'Meera Iyer', handle:'@classicalm', genres:['Carnatic','Konnakol'], match:68, color:'#7c3aed' },
-];
+
 const GENRES = ['Classical','Jazz','Lo-fi','Sufi','Ambient','Techno','Folk','Blues','Fusion','Carnatic','Hindustani','Electronic'];
 const INSTRUMENTS = ['Sitar','Tabla','Flute','Piano','Guitar','Violin','Saxophone','Vocals','Synthesizer','Drums'];
 const TRIGGERS = ['Feeling Lonely','After Heartbreak','Need to Focus','Finding Calm','Celebrating Joy','Processing Grief','Morning Ritual','Late Night Thoughts'];
-const CHAT_MSGS = [
-  { user:'Arjun', color:'#7c3aed', msg:'This raag hits different at midnight 🌙' },
-  { user:'Priya', color:'#0891b2', msg:'The alap section gives me chills every time' },
-  { user:'Dev', color:'#d97706', msg:'Anyone else feel like they\'re floating? 🌊' },
-  { user:'You', color:'#a855f7', msg:'Pure magic. This is why SwarLok exists.' },
+
+const DEFAULT_TRACKS = [
+  { name:'No tracks yet', artist:'Import your songs', duration:'--:--', icon:'♪' }
 ];
 
-// ─── STATE ───
-let isPlaying = false, currentTrack = 0, currentTime = 0, duration = 0;
-let isShuffled = false, isRepeat = false;
-let audioCtx = null, analyser = null;
-const audio = document.getElementById('audioPlayer');
-let localTracks = JSON.parse(localStorage.getItem('swarlok_tracks') || '[]');
-let currentUser = JSON.parse(localStorage.getItem('swarlok_user') || 'null');
+let currentUser = JSON.parse(localStorage.getItem(STORE_KEYS.user) || 'null');
+let localTracks = JSON.parse(localStorage.getItem(STORE_KEYS.tracks) || '[]');
+let savedTheme = localStorage.getItem(STORE_KEYS.theme) || '';
+let jamState = JSON.parse(localStorage.getItem(STORE_KEYS.jam) || '{"live":false,"startedAt":null,"listeners":0}');
+let chatMessages = JSON.parse(localStorage.getItem(STORE_KEYS.chat) || '[]');
+let analytics = JSON.parse(localStorage.getItem(STORE_KEYS.analytics) || '{"imports":0,"jamSessions":0,"messages":0,"lastEventAt":null}');
+
+let queueTracks = localTracks.length ? localTracks.map(t => ({...t, duration: t.duration || '--:--', icon:'🎵'})) : DEFAULT_TRACKS;
+let isPlaying = false, currentTrack = 0, regCurrentStep = 1;
 let selectedGenres = [], selectedInstruments = [], selectedTriggers = [];
-let regCurrentStep = 1;
-let eqNodes = [], eqFreqs = [60,250,500,1000,4000,8000,16000];
+let toastTimer = null, progressInterval = null;
+const audio = document.getElementById('audioPlayer');
 
 // ─── INTRO ───
-const WORDS = [
-  { text:'Sangeet', lang:'Sanskrit' },
-  { text:'Musik', lang:'Deutsch' },
-  { text:'Musique', lang:'Français' },
-  { text:'Música', lang:'Español' },
-  { text:'موسیقی', lang:'Farsi' },
-  { text:'संगीत', lang:'Hindi' },
-  { text:'音楽', lang:'Japanese' },
-  { text:'Musiikki', lang:'Finnish' },
-];
+const WORDS = [{text:'Sangeet'},{text:'Musik'},{text:'Musique'},{text:'Música'},{text:'موسیقی'},{text:'संगीत'},{text:'音楽'},{text:'Musiikki'}];
 let wordIdx = 0;
 function showNextWord() {
   const container = document.getElementById('word-container');
@@ -1318,128 +1374,129 @@ function showNextWord() {
   }
   const el = document.createElement('div');
   el.className = 'music-word';
-  el.textContent = WORDS[wordIdx].text;
+  el.textContent = WORDS[wordIdx++].text;
   container.appendChild(el);
-  wordIdx++;
   setTimeout(showNextWord, 1300);
 }
 setTimeout(showNextWord, 400);
-
 function enterSite() {
   document.getElementById('intro').classList.add('fade-out');
-  setTimeout(() => document.getElementById('intro').remove(), 1300);
+  setTimeout(() => document.getElementById('intro')?.remove(), 1300);
 }
 
-// ─── VIBE ENGINE ───
-function setVibe(vibe) {
-  document.body.className = vibe ? `vibe-${vibe}` : '';
-  document.querySelectorAll('.vibe-pill').forEach(p => p.classList.remove('active'));
-  event.target.classList.add('active');
-  showToast(`🎨 Vibe-Sync: ${vibe || 'Default'} activated`);
+// ─── THEME & NAV ───
+function renderVibeBar() {
+  const wrap = document.getElementById('vibeBar');
+  wrap.innerHTML = '<span>Vibe:</span>' + THEMES.slice(0,4).map(t => `<button class="vibe-pill ${savedTheme===t.key?'active':''}" onclick="setVibe('${t.key}')">${t.label}</button>`).join('');
 }
+function renderThemeMenu() {
+  const menu = document.getElementById('themeDropdown');
+  menu.innerHTML = THEMES.map(t => `<button class="theme-item ${savedTheme===t.key?'active':''}" onclick="setVibe('${t.key}', true)">${t.label}</button>`).join('');
+}
+function toggleThemeMenu() { document.getElementById('themeDropdown').classList.toggle('open'); }
+function setVibe(vibe, close = false) {
+  savedTheme = vibe;
+  document.body.className = vibe ? `vibe-${vibe}` : '';
+  localStorage.setItem(STORE_KEYS.theme, vibe);
+  renderVibeBar();
+  renderThemeMenu();
+  if (close) document.getElementById('themeDropdown').classList.remove('open');
+}
+function updateNavbarAuth() {
+  const loggedIn = Boolean(currentUser);
+  document.getElementById('navSignInBtn').style.display = loggedIn ? 'none' : 'inline-block';
+  document.getElementById('navRegisterBtn').style.display = loggedIn ? 'none' : 'inline-block';
+  const profileBtn = document.getElementById('navProfileBtn');
+  profileBtn.style.display = loggedIn ? 'inline-block' : 'none';
+  profileBtn.classList.toggle('nav-user', loggedIn);
+  if (loggedIn) profileBtn.textContent = `Welcome, ${currentUser.name}`;
+}
+function goToProfile() {
+  document.getElementById('auth-section').scrollIntoView({ behavior: 'smooth' });
+  const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.textContent.includes('My Profile'));
+  switchTab('profile-tab', 'tab-btn', btn);
+}
+
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.theme-menu')) document.getElementById('themeDropdown')?.classList.remove('open');
+});
 
 // ─── TABS ───
 function switchTab(targetId, btnClass, btn) {
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.querySelectorAll(`.${btnClass}`).forEach(b => b.classList.remove('active'));
   document.getElementById(targetId).classList.add('active');
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
 }
 function playerTab(pane) {
   document.querySelectorAll('.player-pane').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.player-tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`pane-${pane}`).classList.add('active');
-  event.target.classList.add('active');
+  const target = Array.from(document.querySelectorAll('.player-tab-btn')).find(b => b.textContent.toLowerCase() === pane);
+  if (target) target.classList.add('active');
 }
 
 // ─── PLAYER ───
+function getCurrentQueue() { return queueTracks.length ? queueTracks : DEFAULT_TRACKS; }
 function renderQueue() {
+  const tracks = getCurrentQueue();
   const list = document.getElementById('queueList');
-  list.innerHTML = TRACKS.map((t,i) => `
-    <div class="queue-item ${i===currentTrack?'style="background:var(--surface2)"':''}">
+  list.innerHTML = tracks.map((t,i) => `
+    <div class="queue-item" onclick="setQueueTrack(${i})" style="${i===currentTrack?'background:var(--surface2)':''}">
       <div class="queue-num">${i+1}</div>
-      <div class="queue-art" style="display:flex;align-items:center;justify-content:center;font-size:1.2rem;">${t.icon}</div>
+      <div class="queue-art" style="display:flex;align-items:center;justify-content:center;font-size:1.1rem;">${t.icon || '🎵'}</div>
       <div style="flex:1;">
         <div class="queue-name" style="${i===currentTrack?'color:var(--accent);':''}">${t.name}</div>
         <div style="font-size:0.75rem;color:var(--text2);">${t.artist}</div>
       </div>
-      <div class="queue-duration">${t.duration}</div>
+      <div class="queue-duration">${t.duration || '--:--'}</div>
     </div>
   `).join('');
 }
-
+function setQueueTrack(index) {
+  currentTrack = index;
+  updateTrackDisplay();
+}
 function updateTrackDisplay() {
-  const t = TRACKS[currentTrack];
+  const t = getCurrentQueue()[currentTrack] || DEFAULT_TRACKS[0];
   document.getElementById('trackName').textContent = t.name;
   document.getElementById('trackArtist').textContent = t.artist;
   renderQueue();
 }
-
 function togglePlay() {
   isPlaying = !isPlaying;
   document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
   document.getElementById('playerShell').classList.toggle('playing', isPlaying);
-  if (audio.src) {
-    isPlaying ? audio.play() : audio.pause();
-  }
-  if (isPlaying && !audio.src) simulateProgress();
+  if (audio.src) isPlaying ? audio.play() : audio.pause();
+  else if (isPlaying) simulateProgress();
 }
-
-let progressInterval = null;
 function simulateProgress() {
-  if (!audio.src) {
-    let fake = 0;
-    clearInterval(progressInterval);
-    progressInterval = setInterval(() => {
-      if (!isPlaying) { clearInterval(progressInterval); return; }
-      fake += 1;
-      const total = 1937; // 32:17
-      const pct = Math.min((fake/total)*100, 100);
-      document.getElementById('progressFill').style.width = pct+'%';
-      document.getElementById('currentTime').textContent = formatTime(fake);
-      document.getElementById('duration').textContent = formatTime(total);
-      if (fake >= total) { clearInterval(progressInterval); isPlaying=false; document.getElementById('playBtn').textContent='▶'; }
-    }, 1000);
-  }
+  let fake = 0;
+  clearInterval(progressInterval);
+  progressInterval = setInterval(() => {
+    if (!isPlaying) return clearInterval(progressInterval);
+    fake += 1;
+    const total = 240;
+    document.getElementById('progressFill').style.width = `${Math.min((fake/total)*100, 100)}%`;
+    document.getElementById('currentTime').textContent = formatTime(fake);
+    document.getElementById('duration').textContent = formatTime(total);
+    if (fake >= total) { isPlaying = false; document.getElementById('playBtn').textContent = '▶'; clearInterval(progressInterval); }
+  }, 1000);
 }
-
-function formatTime(s) {
-  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-}
-
+function formatTime(s) { return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
 function seekAudio(e) {
-  const bar = e.currentTarget;
-  const pct = e.offsetX / bar.offsetWidth;
-  document.getElementById('progressFill').style.width = (pct*100)+'%';
+  const pct = e.offsetX / e.currentTarget.offsetWidth;
+  document.getElementById('progressFill').style.width = `${pct * 100}%`;
   if (audio.src && audio.duration) audio.currentTime = pct * audio.duration;
 }
-
-function setVolume(v) { audio.volume = parseFloat(v); }
-
-function nextTrack() {
-  currentTrack = (currentTrack+1)%TRACKS.length;
-  updateTrackDisplay();
-  if(isPlaying) simulateProgress();
-}
-function prevTrack() {
-  currentTrack = (currentTrack-1+TRACKS.length)%TRACKS.length;
-  updateTrackDisplay();
-}
-function toggleShuffle() {
-  isShuffled = !isShuffled;
-  document.getElementById('shuffleBtn').style.color = isShuffled ? 'var(--accent)' : '';
-  showToast(isShuffled ? '🔀 Shuffle on' : '🔀 Shuffle off');
-}
-function toggleRepeat() {
-  isRepeat = !isRepeat;
-  document.getElementById('repeatBtn').style.color = isRepeat ? 'var(--accent)' : '';
-  showToast(isRepeat ? '🔁 Repeat on' : '🔁 Repeat off');
-}
-
+function setVolume(v) { audio.volume = Number(v); }
+function nextTrack() { currentTrack = (currentTrack + 1) % getCurrentQueue().length; updateTrackDisplay(); }
+function prevTrack() { currentTrack = (currentTrack - 1 + getCurrentQueue().length) % getCurrentQueue().length; updateTrackDisplay(); }
+function toggleShuffle() { showToast('🔀 Shuffle toggled'); }
+function toggleRepeat() { showToast('🔁 Repeat toggled'); }
 audio.addEventListener('timeupdate', () => {
   if (!audio.duration) return;
-  const pct = (audio.currentTime/audio.duration)*100;
-  document.getElementById('progressFill').style.width = pct+'%';
+  document.getElementById('progressFill').style.width = `${(audio.currentTime / audio.duration) * 100}%`;
   document.getElementById('currentTime').textContent = formatTime(Math.floor(audio.currentTime));
   document.getElementById('duration').textContent = formatTime(Math.floor(audio.duration));
 });
@@ -1449,215 +1506,198 @@ function renderEQ() {
   const wrap = document.getElementById('eqBands');
   const labels = ['60Hz','250Hz','500Hz','1kHz','4kHz','8kHz','16kHz'];
   wrap.style.cssText = 'display:flex; gap:1.5rem; align-items:flex-end; justify-content:center;';
-  wrap.innerHTML = labels.map((l,i) => `
-    <div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;">
-      <span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--accent);" id="eq-val-${i}">0</span>
-      <input type="range" min="-12" max="12" value="0" step="1"
-        style="writing-mode:vertical-lr; direction:rtl; height:100px; cursor:pointer; -webkit-appearance:slider-vertical;"
-        oninput="updateEQ(${i},this.value)">
-      <span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text3);">${l}</span>
-    </div>
-  `).join('');
+  wrap.innerHTML = labels.map((l,i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;"><span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--accent);" id="eq-val-${i}">0</span><input type="range" min="-12" max="12" value="0" step="1" style="writing-mode:vertical-lr; direction:rtl; height:100px; cursor:pointer; -webkit-appearance:slider-vertical;" oninput="updateEQ(${i},this.value)"><span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text3);">${l}</span></div>`).join('');
 }
-function updateEQ(band, val) {
-  document.getElementById(`eq-val-${band}`).textContent = (val>0?'+':'')+val+'dB';
-}
+function updateEQ(band, val) { document.getElementById(`eq-val-${band}`).textContent = `${val > 0 ? '+' : ''}${val}dB`; }
 
-// ─── FILE IMPORT ───
+// ─── FILE IMPORT (PERSISTENT) ───
+function persistTracks() {
+  localStorage.setItem(STORE_KEYS.tracks, JSON.stringify(localTracks));
+  queueTracks = localTracks.length ? localTracks.map(t => ({...t, icon:'🎵'})) : DEFAULT_TRACKS;
+  renderQueue();
+  updateTrackDisplay();
+}
 function handleFileImport(e) {
-  const files = Array.from(e.target.files);
+  const files = Array.from(e.target.files || []);
   if (!files.length) return;
-  files.forEach(f => {
-    const entry = { name: f.name.replace(/\.[^.]+$/,''), artist:'Local File', size: formatSize(f.size), url: URL.createObjectURL(f) };
-    localTracks.push(entry);
+  Promise.all(files.map(fileToDataTrack)).then(imported => {
+    localTracks = [...localTracks, ...imported];
+    persistTracks();
+    renderTrackList();
+    analytics.imports += imported.length;
+    analytics.lastEventAt = Date.now();
+    saveAnalytics();
+    showToast(`✅ Imported ${imported.length} track${imported.length > 1 ? 's' : ''} and saved locally`);
   });
-  localStorage.setItem('swarlok_tracks', JSON.stringify(localTracks.map(t => ({name:t.name,artist:t.artist,size:t.size}))));
-  renderTrackList();
-  showToast(`✅ Imported ${files.length} track${files.length>1?'s':''}`);
-  if (files.length > 0) { audio.src = localTracks[0].url; }
 }
-
-function formatSize(b) {
-  if (b<1024) return b+'B';
-  if (b<1024*1024) return (b/1024).toFixed(1)+'KB';
-  return (b/(1024*1024)).toFixed(1)+'MB';
+function fileToDataTrack(file) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve({
+      id: crypto.randomUUID(),
+      name: file.name.replace(/\.[^.]+$/, ''),
+      artist: 'Local File',
+      size: formatSize(file.size),
+      mime: file.type,
+      duration: '--:--',
+      dataUrl: reader.result
+    });
+    reader.readAsDataURL(file);
+  });
 }
-
+function formatSize(b) { if (b<1024) return `${b}B`; if (b<1024*1024) return `${(b/1024).toFixed(1)}KB`; return `${(b/(1024*1024)).toFixed(1)}MB`; }
 function renderTrackList() {
   const list = document.getElementById('track-list');
-  if (!localTracks.length) { list.innerHTML=''; return; }
-  list.innerHTML = `<div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text3);letter-spacing:0.2em;text-transform:uppercase;margin:1.5rem 0 0.75rem;">Local Library (${localTracks.length})</div>`
-    + localTracks.map((t,i) => `
-    <div class="track-list-item" onclick="playLocalTrack(${i})">
-      <div class="tli-art">🎵</div>
-      <div class="tli-info">
-        <div class="tli-name">${t.name}</div>
-        <div class="tli-artist">${t.artist}</div>
-      </div>
-      <div class="tli-size">${t.size||'—'}</div>
-    </div>
-  `).join('');
+  if (!localTracks.length) {
+    list.innerHTML = '<div style="font-size:0.8rem;color:var(--text2);margin-top:1.2rem;">No imported songs yet. Import to build your library.</div>';
+    return;
+  }
+  list.innerHTML = `<div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text3);letter-spacing:0.2em;text-transform:uppercase;margin:1.5rem 0 0.75rem;">My Library (${localTracks.length})</div>` + localTracks.map((t,i) => `<div class="track-list-item" onclick="playLocalTrack(${i})"><div class="tli-art">🎵</div><div class="tli-info"><div class="tli-name">${t.name}</div><div class="tli-artist">${t.artist}</div></div><div class="tli-size">${t.size || '—'}</div></div>`).join('');
 }
-
 function playLocalTrack(i) {
-  if (localTracks[i].url) { audio.src = localTracks[i].url; audio.play(); isPlaying=true; document.getElementById('playBtn').textContent='⏸'; }
-  document.getElementById('trackName').textContent = localTracks[i].name;
-  document.getElementById('trackArtist').textContent = localTracks[i].artist;
-  document.getElementById('playerShell').classList.add('playing');
+  const track = localTracks[i];
+  if (!track) return;
+  currentTrack = i;
+  if (track.dataUrl) {
+    audio.src = track.dataUrl;
+    audio.play();
+    isPlaying = true;
+    document.getElementById('playBtn').textContent = '⏸';
+    document.getElementById('playerShell').classList.add('playing');
+  }
+  document.getElementById('trackName').textContent = track.name;
+  document.getElementById('trackArtist').textContent = track.artist;
+}
+function simulateSpotify() { showToast('🔒 Demo import removed. Connect real integration in backend.'); }
+function simulateApple() { showToast('🔒 Demo import removed. Connect real integration in backend.'); }
+
+// ─── JAM ROOM PERSISTENCE ───
+function saveJamState() { localStorage.setItem(STORE_KEYS.jam, JSON.stringify(jamState)); }
+function toggleJamSession() {
+  jamState.live = !jamState.live;
+  jamState.startedAt = jamState.live ? Date.now() : null;
+  jamState.listeners = jamState.live ? Math.max(1, jamState.listeners || 1) : 0;
+  if (jamState.live) analytics.jamSessions += 1;
+  analytics.lastEventAt = Date.now();
+  saveJamState();
+  saveAnalytics();
+  renderJamState();
+  showToast(jamState.live ? '🎵 Jam session started and saved' : '🛑 Jam session ended');
+}
+function renderJamState() {
+  const live = jamState.live;
+  document.getElementById('jamStatusText').textContent = live ? `Live · ${jamState.listeners || 1} listeners` : 'Offline · 0 listeners';
+  document.getElementById('jamToggleBtn').textContent = live ? 'End Jam' : 'Start Jam';
 }
 
-function simulateSpotify() {
-  showToast('🟢 Spotify OAuth flow initiated… (simulation)');
-  setTimeout(() => {
-    const fakeTracks = [
-      {name:'Midnight Rain',artist:'Taylor Swift',size:'4.2MB'},
-      {name:'Blinding Lights',artist:'The Weeknd',size:'5.1MB'},
-      {name:'As It Was',artist:'Harry Styles',size:'3.8MB'},
-    ];
-    fakeTracks.forEach(t => localTracks.push(t));
-    renderTrackList();
-    showToast('✅ 3 Spotify tracks imported!');
-  }, 2000);
-}
-
-function simulateApple() {
-  showToast('🎵 Apple MusicKit bridge activated… (simulation)');
-  setTimeout(() => {
-    localTracks.push({name:'Bohemian Rhapsody',artist:'Queen',size:'6.0MB'});
-    renderTrackList();
-    showToast('✅ Apple Music track imported!');
-  }, 1800);
-}
-
-// ─── JAM ROOM ───
-function renderListeners() {
-  const colors = ['#7c3aed','#0891b2','#d97706','#059669'];
-  const names = ['A','P','D','Z'];
-  const el = document.getElementById('listenerAvatars');
-  el.innerHTML = names.map((n,i) => `<div class="listener-avatar" style="background:${colors[i]}">${n}</div>`).join('');
-  el.innerHTML += '<span class="listener-count">+ 4 listening</span>';
-}
-
+// ─── CHAT ───
 function renderChatMessages() {
   const el = document.getElementById('chatMessages');
-  el.innerHTML = CHAT_MSGS.map(m => `
-    <div class="chat-msg">
-      <div class="chat-avatar" style="background:${m.color}">${m.user[0]}</div>
-      <div class="chat-bubble">
-        <div class="chat-user">${m.user}</div>
-        ${m.msg}
-      </div>
-    </div>
-  `).join('');
+  const msgs = chatMessages.slice(-50);
+  el.innerHTML = msgs.map(m => `<div class="chat-msg"><div class="chat-avatar" style="background:${m.color}">${m.user[0]}</div><div class="chat-bubble"><div class="chat-user">${m.user}</div>${m.msg}</div></div>`).join('') || '<div style="color:var(--text3);font-size:0.78rem;">No chat yet. Start the conversation.</div>';
   el.scrollTop = el.scrollHeight;
 }
-
 function sendChatMsg() {
   const input = document.getElementById('chatInput');
   const msg = input.value.trim();
   if (!msg) return;
-  CHAT_MSGS.push({ user: currentUser?.name || 'You', color:'#a855f7', msg });
+  const item = { user: currentUser?.name || 'You', color:'#a855f7', msg };
+  chatMessages.push(item);
+  localStorage.setItem(STORE_KEYS.chat, JSON.stringify(chatMessages));
+  analytics.messages += 1;
+  analytics.lastEventAt = Date.now();
+  saveAnalytics();
   renderChatMessages();
   input.value = '';
-  // Simulate CF Worker WebSocket response
-  setTimeout(() => {
-    const bots = ['Arjun','Priya','Dev'];
-    const replies = ['🎵','✨','That\'s the one!','Pure bliss.','🙌'];
-    CHAT_MSGS.push({ user:bots[Math.floor(Math.random()*3)], color:'#0891b2', msg:replies[Math.floor(Math.random()*replies.length)] });
-    renderChatMessages();
-  }, 800 + Math.random()*1500);
 }
-
-function copyRoomCode() {
-  navigator.clipboard?.writeText('https://swarlok.app/jam/JAM-4829-SWAR').catch(()=>{});
-  showToast('🔗 Room link copied to clipboard!');
+function renderListeners() {
+  const el = document.getElementById('listenerAvatars');
+  const count = jamState.live ? Math.max(1, jamState.listeners || 1) : 0;
+  const avatars = ['Y','A','P','D'].slice(0, Math.min(count, 4));
+  const colors = ['#7c3aed','#0891b2','#d97706','#059669'];
+  el.innerHTML = avatars.map((n,i) => `<div class="listener-avatar" style="background:${colors[i]}">${n}</div>`).join('') + `<span class="listener-count">${count} listening</span>`;
 }
+function copyRoomCode() { navigator.clipboard?.writeText(location.href + '#jam-section'); showToast('🔗 Jam room link copied'); }
 
 // ─── SOCIAL ───
 function renderSoulmates() {
   const el = document.getElementById('soulmateGrid');
-  el.innerHTML = SOULMATES.map(s => `
-    <div class="social-card">
-      <div class="sc-avatar" style="background:${s.color}">${s.name[0]}</div>
-      <div class="sc-name">${s.name}</div>
-      <div class="sc-handle">${s.handle}</div>
-      <div class="sc-genres">${s.genres.map(g=>`<span class="sc-genre">${g}</span>`).join('')}</div>
-      <div class="sc-match">🎵 ${s.match}% Match</div>
-      <div class="match-bar"><div class="match-fill" style="width:${s.match}%"></div></div>
-      <div style="margin-top:0.5rem;"></div>
-      <div class="sc-actions">
-        <button class="sc-btn primary" onclick="showToast('✉️ Friend request sent to ${s.name}!')">+ Connect</button>
-        <button class="sc-btn" onclick="showToast('🎵 Jam room invite sent!')">Jam</button>
-      </div>
-    </div>
-  `).join('');
+  if (!currentUser) {
+    el.innerHTML = '<div style="grid-column:1/-1;background:var(--surface);border:1px solid var(--border);padding:1.2rem;border-radius:10px;color:var(--text2);">Sign in to see real music connections based on your profile taste.</div>';
+    return;
+  }
+  const cards = (currentUser.genres || []).slice(0,3).map((g, i) => ({name:`${g} Circle`, handle:`@${g.toLowerCase()}_tribe`, match:90 - (i*5), color:['#7c3aed','#0891b2','#d97706'][i]}));
+  el.innerHTML = cards.map(s => `<div class="social-card"><div class="sc-avatar" style="background:${s.color}">${s.name[0]}</div><div class="sc-name">${s.name}</div><div class="sc-handle">${s.handle}</div><div class="sc-match">🎵 ${s.match}% Match</div><div class="match-bar"><div class="match-fill" style="width:${s.match}%"></div></div><div class="sc-actions" style="margin-top:0.8rem;"><button class="sc-btn primary" onclick="showToast('Connected')">+ Connect</button><button class="sc-btn" onclick="showToast('Invite sent')">Jam</button></div></div>`).join('') || '<div style="grid-column:1/-1;color:var(--text2);">Add genre preferences to generate recommendations.</div>';
 }
 
 // ─── AUTH ───
 function doLogin() {
-  const email = document.getElementById('loginEmail').value;
-  const pass = document.getElementById('loginPass').value;
-  if (!email || !pass) { showToast('⚠️ Please fill all fields'); return; }
-  const user = { email, name: email.split('@')[0], loginAt: Date.now() };
-  localStorage.setItem('swarlok_user', JSON.stringify(user));
-  currentUser = user;
-  showToast(`🎵 Welcome back, ${user.name}!`);
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value.trim();
+  if (!email || !pass) return showToast('⚠️ Please fill all fields');
+  currentUser = { name: email.split('@')[0], email, loginAt: Date.now() };
+  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
+  showToast(`🎵 Welcome back, ${currentUser.name}!`);
   updateProfileTab();
 }
-
 function regStep(step) {
   document.getElementById(`reg-step-${regCurrentStep}`).style.display = 'none';
   regCurrentStep = step;
   document.getElementById(`reg-step-${step}`).style.display = 'block';
-  document.querySelectorAll('#stepIndicator .step-dot').forEach((d,i) => {
-    d.classList.toggle('done', i < step);
+  document.querySelectorAll('#stepIndicator .step-dot').forEach((d,i) => d.classList.toggle('done', i < step));
+}
+function renderChips(containerId, items, groupName) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = items.map(item => `<div class="pref-chip" data-group="${groupName}" data-item="${item}">${item}</div>`).join('');
+}
+function setupChipEvents() {
+  document.querySelectorAll('.pref-chip').forEach(chip => {
+    chip.onclick = () => {
+      const group = chip.dataset.group;
+      const item = chip.dataset.item;
+      const map = { genres: selectedGenres, instruments: selectedInstruments, triggers: selectedTriggers };
+      const arr = map[group];
+      const idx = arr.indexOf(item);
+      if (idx >= 0) arr.splice(idx, 1); else arr.push(item);
+      chip.classList.toggle('selected', idx < 0);
+    };
   });
 }
-
-function renderChips(containerId, items, arr) {
-  const el = document.getElementById(containerId);
-  el.innerHTML = items.map(item => `
-    <div class="pref-chip" onclick="toggleChip(this,'${item}',${JSON.stringify(arr).replace(/'/g,'&apos;')})">
-      ${item}
-    </div>
-  `).join('');
-}
-
-function toggleChip(el, val, arr) {
-  el.classList.toggle('selected');
-  const idx = arr.indexOf(val);
-  if (idx >= 0) arr.splice(idx,1); else arr.push(val);
-}
-
 function completeRegistration() {
-  const name = document.getElementById('regName').value || 'SoundSeeker';
-  const email = document.getElementById('regEmail').value;
-  if (!email) { showToast('⚠️ Email required'); return; }
-  const user = { name, email, genres: selectedGenres, instruments: selectedInstruments, triggers: selectedTriggers, joined: Date.now() };
-  localStorage.setItem('swarlok_user', JSON.stringify(user));
-  currentUser = user;
+  const name = document.getElementById('regName').value.trim() || 'SoundSeeker';
+  const email = document.getElementById('regEmail').value.trim();
+  if (!email) return showToast('⚠️ Email required');
+  currentUser = { name, email, genres: selectedGenres, instruments: selectedInstruments, triggers: selectedTriggers, joined: Date.now() };
+  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
   showToast(`🎉 Welcome to SwarLok, ${name}!`);
   updateProfileTab();
   regStep(1);
 }
-
 function updateProfileTab() {
-  if (!currentUser) return;
+  const tabs = Array.from(document.querySelectorAll('#auth-section .tab-btn'));
+  const loginTabBtn = tabs.find(t => t.textContent.includes('Sign In'));
+  const registerTabBtn = tabs.find(t => t.textContent.includes('Register'));
+  if (currentUser) {
+    loginTabBtn.style.display = 'none';
+    registerTabBtn.style.display = 'none';
+    const profileTabBtn = tabs.find(t => t.textContent.includes('My Profile'));
+    switchTab('profile-tab', 'tab-btn', profileTabBtn);
+  } else {
+    loginTabBtn.style.display = 'inline-block';
+    registerTabBtn.style.display = 'inline-block';
+  }
   const el = document.getElementById('profile-tab');
-  el.innerHTML = `
-    <div style="max-width:500px;">
-      <div style="display:flex; align-items:center; gap:1.5rem; margin-bottom:2rem;">
-        <div class="profile-avatar">${(currentUser.name||'?')[0]}</div>
-        <div>
-          <div style="font-size:1.3rem; font-weight:500;">${currentUser.name}</div>
-          <div style="color:var(--text2); font-size:0.85rem;">${currentUser.email}</div>
-          <div style="font-family:var(--font-mono); font-size:0.68rem; color:var(--accent); margin-top:4px;">MEMBER</div>
-        </div>
-      </div>
-      ${currentUser.genres?.length ? `<div style="margin-bottom:1rem;"><div class="form-label">Your Genres</div><div class="preference-chips">${currentUser.genres.map(g=>`<div class="pref-chip selected">${g}</div>`).join('')}</div></div>` : ''}
-      <button class="btn-sm" onclick="localStorage.removeItem('swarlok_user');currentUser=null;showToast('👋 Signed out');updateProfileTab();">Sign Out</button>
-    </div>
-  `;
+  el.innerHTML = !currentUser
+    ? `<div style="text-align:center; padding:2rem; font-family:var(--font-display); font-style:italic; color:var(--text2);"><div style="font-size:4rem; margin-bottom:1rem;">🎵</div>Sign in to view your profile and listening history.</div>`
+    : `<div style="max-width:500px;"><div style="display:flex; align-items:center; gap:1.5rem; margin-bottom:2rem;"><div class="profile-avatar">${(currentUser.name||'?')[0]}</div><div><div style="font-size:1.3rem; font-weight:500;">${currentUser.name}</div><div style="color:var(--text2); font-size:0.85rem;">${currentUser.email}</div><div style="font-family:var(--font-mono); font-size:0.68rem; color:var(--accent); margin-top:4px;">MEMBER</div></div></div>${currentUser.genres?.length ? `<div style="margin-bottom:1rem;"><div class="form-label">Your Genres</div><div class="preference-chips">${currentUser.genres.map(g=>`<div class="pref-chip selected">${g}</div>`).join('')}</div></div>` : ''}<button class="btn-sm" onclick="signOut()">Sign Out</button></div>`;
+  updateNavbarAuth();
+  renderSoulmates();
+}
+function signOut() {
+  localStorage.removeItem(STORE_KEYS.user);
+  currentUser = null;
+  updateProfileTab();
+  showToast('👋 Signed out');
 }
 
 // ─── MODAL ───
@@ -1666,82 +1706,77 @@ function openModal(type) {
   const content = document.getElementById('modal-content');
   overlay.classList.add('open');
   if (type === 'login') {
-    content.innerHTML = `
-      <div class="modal-title">Welcome back</div>
-      <div class="modal-sub">Sign in to resume your musical journey on SwarLok.</div>
-      <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" placeholder="your@email.com" id="mLoginEmail"></div>
-      <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-input" placeholder="••••••••" id="mLoginPass"></div>
-      <button class="btn-hero" style="width:100%;margin-top:0.5rem;" onclick="modalLogin()">Enter SwarLok →</button>
-    `;
+    content.innerHTML = `<div class="modal-title">Welcome back</div><div class="modal-sub">Sign in to resume your musical journey on SwarLok.</div><div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" placeholder="your@email.com" id="mLoginEmail"></div><div class="form-group"><label class="form-label">Password</label><input type="password" class="form-input" placeholder="••••••••" id="mLoginPass"></div><button class="btn-hero" style="width:100%;margin-top:0.5rem;" onclick="modalLogin()">Enter SwarLok →</button>`;
   } else {
-    content.innerHTML = `
-      <div class="modal-title">Begin your journey</div>
-      <div class="modal-sub">Create your SwarLok profile and discover your musical soulmates.</div>
-      <div class="form-group"><label class="form-label">Display Name</label><input type="text" class="form-input" placeholder="SoundSeeker" id="mRegName"></div>
-      <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" placeholder="your@email.com" id="mRegEmail"></div>
-      <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-input" placeholder="••••••••" id="mRegPass"></div>
-      <button class="btn-hero" style="width:100%;margin-top:0.5rem;" onclick="modalRegister()">Create Account →</button>
-    `;
+    content.innerHTML = `<div class="modal-title">Begin your journey</div><div class="modal-sub">Create your SwarLok profile.</div><div class="form-group"><label class="form-label">Display Name</label><input type="text" class="form-input" placeholder="SoundSeeker" id="mRegName"></div><div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" placeholder="your@email.com" id="mRegEmail"></div><div class="form-group"><label class="form-label">Password</label><input type="password" class="form-input" placeholder="••••••••" id="mRegPass"></div><button class="btn-hero" style="width:100%;margin-top:0.5rem;" onclick="modalRegister()">Create Account →</button>`;
   }
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
 function modalLogin() {
-  const email = document.getElementById('mLoginEmail')?.value;
-  if (!email) { showToast('⚠️ Please fill in your email'); return; }
-  const user = { name: email.split('@')[0], email };
-  localStorage.setItem('swarlok_user', JSON.stringify(user));
-  currentUser = user;
+  const email = document.getElementById('mLoginEmail')?.value?.trim();
+  if (!email) return showToast('⚠️ Please fill in your email');
+  currentUser = { name: email.split('@')[0], email, loginAt: Date.now() };
+  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
   closeModal();
-  showToast(`🎵 Welcome back, ${user.name}!`);
   updateProfileTab();
+  showToast(`🎵 Welcome back, ${currentUser.name}!`);
 }
 function modalRegister() {
-  const name = document.getElementById('mRegName')?.value || 'SoundSeeker';
-  const email = document.getElementById('mRegEmail')?.value;
-  if (!email) { showToast('⚠️ Email required'); return; }
-  const user = { name, email, joined: Date.now() };
-  localStorage.setItem('swarlok_user', JSON.stringify(user));
-  currentUser = user;
+  const name = document.getElementById('mRegName')?.value?.trim() || 'SoundSeeker';
+  const email = document.getElementById('mRegEmail')?.value?.trim();
+  if (!email) return showToast('⚠️ Email required');
+  currentUser = { name, email, joined: Date.now() };
+  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
   closeModal();
-  showToast(`🎉 Welcome to SwarLok, ${name}!`);
   updateProfileTab();
+  showToast(`🎉 Welcome to SwarLok, ${name}!`);
 }
 
-// ─── TOAST ───
-let toastTimer = null;
+// ─── TOAST + REAL-TIME ───
 function showToast(msg) {
   const t = document.getElementById('toast');
   document.getElementById('toast-msg').textContent = msg;
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
 }
+function saveAnalytics() { localStorage.setItem(STORE_KEYS.analytics, JSON.stringify(analytics)); }
+function renderRealtimeData() {
+  let panel = document.getElementById('realtimePanel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'realtimePanel';
+    panel.style.cssText = 'position:fixed;bottom:1rem;left:1rem;z-index:200;background:var(--surface2);border:1px solid var(--border);padding:0.55rem 0.7rem;border-radius:8px;font-family:var(--font-mono);font-size:0.66rem;color:var(--text2);';
+    document.body.appendChild(panel);
+  }
+  const last = analytics.lastEventAt ? new Date(analytics.lastEventAt).toLocaleTimeString() : '—';
+  panel.textContent = `LIVE • Tracks:${localTracks.length} • Jam:${jamState.live ? 'ON' : 'OFF'} • Msg:${analytics.messages} • Last:${last}`;
+}
+setInterval(renderRealtimeData, 1000);
 
 // ─── SCROLL REVEAL ───
-const observer = new IntersectionObserver(entries => {
-  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('revealed'); } });
-}, { threshold: 0.15 });
+const observer = new IntersectionObserver(entries => entries.forEach(e => e.isIntersecting && e.target.classList.add('revealed')), { threshold: 0.15 });
 document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 
-// ─── CLOUDFLARE KV SIMULATION ───
-const CF_KV = {
-  get(key) { return Promise.resolve(localStorage.getItem('cf_kv_'+key)); },
-  put(key, val) { localStorage.setItem('cf_kv_'+key, val); return Promise.resolve(); },
-  delete(key) { localStorage.removeItem('cf_kv_'+key); return Promise.resolve(); }
-};
-// Usage: await CF_KV.put('user:123', JSON.stringify(user));
-
 // ─── INIT ───
+renderVibeBar();
+renderThemeMenu();
+setVibe(savedTheme);
 renderQueue();
 renderEQ();
+renderTrackList();
 renderChatMessages();
 renderListeners();
+renderJamState();
 renderSoulmates();
-renderChips('genreChips', GENRES, selectedGenres);
-renderChips('instrumentChips', INSTRUMENTS, selectedInstruments);
-renderChips('triggerChips', TRIGGERS, selectedTriggers);
-renderTrackList();
-if (currentUser) updateProfileTab();
+renderChips('genreChips', GENRES, 'genres');
+renderChips('instrumentChips', INSTRUMENTS, 'instruments');
+renderChips('triggerChips', TRIGGERS, 'triggers');
+setupChipEvents();
+updateTrackDisplay();
+updateProfileTab();
+updateNavbarAuth();
+renderRealtimeData();
 </script>
 </body>
 </html>
