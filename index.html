@@ -84,6 +84,25 @@
     background: #000;
     display: flex; align-items: center; justify-content: center;
     flex-direction: column;
+    overflow: hidden;
+  }
+  #intro-glitter {
+    position: absolute; inset: 0;
+    pointer-events: none;
+  }
+  .glitter {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(192,132,252,0.2) 70%, transparent 100%);
+    opacity: 0;
+    animation: glitterFloat linear infinite;
+  }
+  @keyframes glitterFloat {
+    0% { transform: translateY(24px) scale(0.7); opacity: 0; }
+    15% { opacity: 0.85; }
+    100% { transform: translateY(-120vh) scale(1.2); opacity: 0; }
   }
   #intro.fade-out { animation: introFade 1.2s ease forwards; }
   @keyframes introFade { to { opacity:0; pointer-events:none; } }
@@ -114,6 +133,27 @@
     animation: titleReveal 2s ease 0.4s forwards;
     position: relative;
     text-align: center;
+    z-index: 2;
+  }
+  .intro-language-cloud {
+    position: absolute;
+    inset: 13% 8% 24%;
+    pointer-events: none;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(80px, 1fr));
+    gap: 0.75rem 1.2rem;
+    align-content: center;
+    z-index: 1;
+    opacity: 0.9;
+  }
+  .intro-lang {
+    color: rgba(232, 224, 240, 0.76);
+    font-family: var(--font-mono);
+    font-size: clamp(0.64rem, 1.5vw, 0.95rem);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    text-shadow: 0 0 14px rgba(192,132,252,0.18);
+    text-align: center;
   }
   #swarlok-title::after {
     content: '';
@@ -136,6 +176,7 @@
     opacity: 0;
     text-transform: uppercase;
     animation: fadeUp 1s ease 1.8s forwards;
+    z-index: 2;
   }
   @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
   #intro-enter {
@@ -152,6 +193,7 @@
     opacity: 0;
     animation: fadeUp 1s ease 2.4s forwards;
     transition: all 0.3s;
+    z-index: 2;
   }
   #intro-enter:hover {
     background: rgba(192,132,252,0.1);
@@ -1121,6 +1163,7 @@
     .player-right { justify-content: center; }
     .nav-links { display: none; }
     .jam-chat { height: 300px; }
+    .intro-language-cloud { grid-template-columns: repeat(2, minmax(120px, 1fr)); inset: 10% 10% 32%; }
   }
 </style>
 </head>
@@ -1128,6 +1171,8 @@
 
 <!-- ── INTRO ── -->
 <div id="intro">
+  <div id="intro-glitter"></div>
+  <div class="intro-language-cloud" id="intro-language-cloud"></div>
   <div id="word-container"></div>
   <div id="swarlok-title">SwarLok</div>
   <div id="intro-subtitle">World of Notes · Mundo de Notas · Monde des Sons · 音の世界 · 사운드의 세계</div>
@@ -1605,6 +1650,10 @@ let jamMembers = {};
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
+function getAccountId() {
+  const email = normalizeEmail(currentUser?.email || '');
+  return email || 'guest_local';
+}
 function loadUserProfiles() {
   return JSON.parse(localStorage.getItem(STORE_KEYS.userProfiles) || '{}');
 }
@@ -1683,8 +1732,60 @@ const WORDS = [
   { text:'Muzică' },
   { text:'SwarLok' }
 ];
+const INTRO_LANGS = [
+  'Music', 'Música', 'Musique', 'Musik', 'Musica', 'Muusika', 'Muziek', 'Música (PT)',
+  'Μουσική', 'संगीत', 'সংগীত', 'சங்கீதம்', 'తెలుగు సంగీతం', 'ಕನ್ನಡ ಸಂಗೀತ', 'മ്യൂസിക്',
+  '音乐', '音楽', '음악', 'Âm nhạc', 'ดนตรี', 'Muzyka', 'Hudba', 'Sangeet', 'Muzyka'
+];
 let wordIdx = 0;
 const WORD_FRAME_MS = 1100;
+let introAudioCtx = null;
+let introAudioStarted = false;
+function renderIntroCinematicLayer() {
+  const glitterWrap = document.getElementById('intro-glitter');
+  const cloud = document.getElementById('intro-language-cloud');
+  if (cloud) {
+    cloud.innerHTML = INTRO_LANGS.map(lang => `<div class="intro-lang">${lang}</div>`).join('');
+  }
+  if (!glitterWrap) return;
+  glitterWrap.innerHTML = '';
+  const sparkleCount = 48;
+  for (let i = 0; i < sparkleCount; i++) {
+    const dot = document.createElement('span');
+    dot.className = 'glitter';
+    dot.style.left = `${Math.random() * 100}%`;
+    dot.style.top = `${Math.random() * 100}%`;
+    dot.style.animationDelay = `${Math.random() * 2.6}s`;
+    dot.style.animationDuration = `${4 + Math.random() * 4}s`;
+    dot.style.opacity = `${0.2 + Math.random() * 0.6}`;
+    glitterWrap.appendChild(dot);
+  }
+}
+function startIntroAudio() {
+  if (introAudioStarted) return;
+  introAudioStarted = true;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  introAudioCtx = new Ctx();
+  if (introAudioCtx.state === 'suspended') introAudioCtx.resume().catch(() => {});
+  const master = introAudioCtx.createGain();
+  master.gain.value = 0.06;
+  master.connect(introAudioCtx.destination);
+  const chord = [220, 277.18, 329.63];
+  chord.forEach((freq, idx) => {
+    const osc = introAudioCtx.createOscillator();
+    const gain = introAudioCtx.createGain();
+    osc.type = idx % 2 ? 'triangle' : 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, introAudioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.03, introAudioCtx.currentTime + 0.5 + idx * 0.08);
+    gain.gain.exponentialRampToValueAtTime(0.0001, introAudioCtx.currentTime + 2.8);
+    osc.connect(gain);
+    gain.connect(master);
+    osc.start();
+    osc.stop(introAudioCtx.currentTime + 3);
+  });
+}
 function showNextWord() {
   const container = document.getElementById('word-container');
   if (!container) return;
@@ -1701,10 +1802,15 @@ function showNextWord() {
   container.appendChild(el);
   setTimeout(showNextWord, WORD_FRAME_MS);
 }
+renderIntroCinematicLayer();
 setTimeout(showNextWord, 400);
 function enterSite() {
+  startIntroAudio();
   document.getElementById('intro').classList.add('fade-out');
-  setTimeout(() => document.getElementById('intro')?.remove(), 1300);
+  setTimeout(() => {
+    document.getElementById('intro')?.remove();
+    if (introAudioCtx && introAudioCtx.state !== 'closed') introAudioCtx.close().catch(() => {});
+  }, 1300);
 }
 
 // ─── THEME & NAV ───
@@ -1929,14 +2035,8 @@ function isSupportedMusicFile(file) {
   return byExtension || byMime;
 }
 function savePendingSync() {
-  const safePending = pendingSync.map(batch => ({
-    id: batch.id,
-    source: batch.source,
-    createdAt: batch.createdAt,
-    trackCount: Array.isArray(batch.tracks) ? batch.tracks.length : 0
-  }));
   try {
-    localStorage.setItem(STORE_KEYS.pendingSync, JSON.stringify(safePending));
+    localStorage.setItem(STORE_KEYS.pendingSync, JSON.stringify(pendingSync));
   } catch (err) {
     console.warn('Pending sync persistence skipped due to storage quota.', err);
   }
@@ -1952,10 +2052,33 @@ async function sendTracksToBackend(tracks) {
   const response = await fetch('/api/import/local-json', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tracks })
+    body: JSON.stringify({ tracks, accountId: getAccountId() })
   });
   if (!response.ok) throw new Error(`Backend import failed (${response.status})`);
   return response.json().catch(() => ({}));
+}
+async function loadTracksFromBackend() {
+  if (!currentUser?.email) return;
+  try {
+    const response = await fetch('/api/import/list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountId: getAccountId() })
+    });
+    if (!response.ok) throw new Error(`Backend list failed (${response.status})`);
+    const payload = await response.json().catch(() => ({}));
+    const remoteTracks = Array.isArray(payload?.tracks) ? payload.tracks : [];
+    if (!remoteTracks.length) return;
+    const merged = new Map(localTracks.map(track => [track.id, track]));
+    remoteTracks.forEach(track => merged.set(track.id, { ...track, objectUrl: '' }));
+    localTracks = Array.from(merged.values());
+    persistTracks();
+    renderTrackList();
+    syncJamFromImports(jamPrefs.autoPlayImported);
+    showToast(`☁️ Restored ${remoteTracks.length} backend import(s) for ${currentUser.email}`);
+  } catch (err) {
+    console.warn('Unable to restore backend imports', err);
+  }
 }
 function handleFileImport(e) {
   importMusicFiles(Array.from(e.target.files || []), 'files');
@@ -2348,7 +2471,7 @@ async function connectSpotifyPlaylist() {
     const response = await fetch('/api/import/spotify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ playlistUrl })
+      body: JSON.stringify({ playlistUrl, accountId: getAccountId() })
     });
     if (!response.ok) throw new Error(`Spotify import failed (${response.status})`);
     const payload = await response.json();
@@ -2479,10 +2602,25 @@ function doLogin() {
   const email = document.getElementById('loginEmail').value.trim();
   const pass = document.getElementById('loginPass').value.trim();
   if (!email || !pass) return showToast('⚠️ Please fill all fields');
-  currentUser = { name: email.split('@')[0], email, loginAt: Date.now() };
+  const existingProfile = loadUserProfiles()[normalizeEmail(email)] || {};
+  currentUser = {
+    name: existingProfile.name || email.split('@')[0],
+    email,
+    genres: existingProfile.genres || [],
+    instruments: existingProfile.instruments || [],
+    triggers: existingProfile.triggers || [],
+    loginAt: Date.now()
+  };
   localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
   hydrateStateForUser(currentUser);
+  persistUserScopedState({
+    name: currentUser.name,
+    genres: currentUser.genres || [],
+    instruments: currentUser.instruments || [],
+    triggers: currentUser.triggers || []
+  });
   syncJamFromImports();
+  loadTracksFromBackend();
   renderTrackList();
   renderChatMessages();
   renderJamCode();
@@ -2520,7 +2658,14 @@ function completeRegistration() {
   currentUser = { name, email, genres: selectedGenres, instruments: selectedInstruments, triggers: selectedTriggers, joined: Date.now() };
   localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
   hydrateStateForUser(currentUser);
+  persistUserScopedState({
+    name,
+    genres: selectedGenres,
+    instruments: selectedInstruments,
+    triggers: selectedTriggers
+  });
   syncJamFromImports();
+  loadTracksFromBackend();
   renderJamCode();
   showToast(`🎉 Welcome to SwarLok, ${name}! Your jam code: ${jamCode}`);
   updateProfileTab();
@@ -2568,10 +2713,25 @@ function closeModal() { document.getElementById('modal-overlay').classList.remov
 function modalLogin() {
   const email = document.getElementById('mLoginEmail')?.value?.trim();
   if (!email) return showToast('⚠️ Please fill in your email');
-  currentUser = { name: email.split('@')[0], email, loginAt: Date.now() };
+  const existingProfile = loadUserProfiles()[normalizeEmail(email)] || {};
+  currentUser = {
+    name: existingProfile.name || email.split('@')[0],
+    email,
+    genres: existingProfile.genres || [],
+    instruments: existingProfile.instruments || [],
+    triggers: existingProfile.triggers || [],
+    loginAt: Date.now()
+  };
   localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
   hydrateStateForUser(currentUser);
+  persistUserScopedState({
+    name: currentUser.name,
+    genres: currentUser.genres || [],
+    instruments: currentUser.instruments || [],
+    triggers: currentUser.triggers || []
+  });
   syncJamFromImports();
+  loadTracksFromBackend();
   renderTrackList();
   renderChatMessages();
   renderJamCode();
@@ -2588,6 +2748,7 @@ function modalRegister() {
   localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
   hydrateStateForUser(currentUser);
   syncJamFromImports();
+  loadTracksFromBackend();
   renderJamCode();
   closeModal();
   updateProfileTab();
@@ -2654,6 +2815,7 @@ updateNavbarAuth();
 renderRealtimeData();
 renderBackendSyncStatus();
 syncPendingToBackend();
+if (currentUser) loadTracksFromBackend();
 </script>
 </body>
 </html>

@@ -2,6 +2,7 @@
  * SwarLok backend (Cloudflare Worker style)
  * Endpoints:
  * - POST /api/import/local-json
+ * - POST /api/import/list
  * - POST /api/import/spotify
  * - POST /api/jam/create
  * - POST /api/jam/join
@@ -16,6 +17,9 @@ export default {
     const url = new URL(request.url);
     if (request.method === 'POST' && url.pathname === '/api/import/local-json') {
       return handleLocalJsonImport(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/import/list') {
+      return handleImportList(request, env);
     }
     if (request.method === 'POST' && url.pathname === '/api/import/spotify') {
       return handleSpotifyImport(request, env);
@@ -39,7 +43,9 @@ export default {
 async function handleLocalJsonImport(request, env) {
   const body = await request.json().catch(() => ({}));
   const tracks = Array.isArray(body?.tracks) ? body.tracks : [];
+  const accountId = sanitizeAccountId(body?.accountId);
   if (!tracks.length) return json({ ok: false, error: 'No tracks provided' }, 400);
+  if (!accountId) return json({ ok: false, error: 'Missing accountId' }, 400);
 
   const stored = [];
   for (const track of tracks) {
@@ -53,19 +59,35 @@ async function handleLocalJsonImport(request, env) {
       mime: track.mime || 'audio/mpeg',
       sourceFolder: track.sourceFolder || 'Ungrouped',
       relativePath: track.relativePath || '',
-      uploadedAt: new Date().toISOString()
+      uploadedAt: new Date().toISOString(),
+      accountId
     };
-    await env.MUSIC_META?.put(`track:${id}`, JSON.stringify(clean));
+    await env.MUSIC_META?.put(`track:${accountId}:${id}`, JSON.stringify(clean));
     if (track.dataUrl && env.MUSIC_BUCKET) {
       const { bytes, contentType } = decodeDataUrl(track.dataUrl);
       const folderPrefix = toSafeFolder(clean.sourceFolder || 'Ungrouped');
-      await env.MUSIC_BUCKET.put(`music/${folderPrefix}/${id}`, bytes, {
+      await env.MUSIC_BUCKET.put(`music/${accountId}/${folderPrefix}/${id}`, bytes, {
         httpMetadata: { contentType: contentType || clean.mime }
       });
     }
     stored.push(clean);
   }
+  const existingRaw = await env.MUSIC_META?.get(`imports:${accountId}`);
+  const existing = existingRaw ? JSON.parse(existingRaw) : [];
+  const byId = new Map(existing.map(item => [item.id, item]));
+  for (const track of stored) byId.set(track.id, track);
+  const merged = Array.from(byId.values()).sort((a, b) => String(b.uploadedAt || '').localeCompare(String(a.uploadedAt || '')));
+  await env.MUSIC_META?.put(`imports:${accountId}`, JSON.stringify(merged.slice(0, 1000)));
   return json({ ok: true, storedCount: stored.length, tracks: stored });
+}
+
+async function handleImportList(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const accountId = sanitizeAccountId(body?.accountId);
+  if (!accountId) return json({ ok: false, error: 'Missing accountId' }, 400);
+  const raw = await env.MUSIC_META?.get(`imports:${accountId}`);
+  const tracks = raw ? JSON.parse(raw) : [];
+  return json({ ok: true, tracks: Array.isArray(tracks) ? tracks : [] });
 }
 
 async function handleSpotifyImport(request, env) {
@@ -246,4 +268,12 @@ function toSafeFolder(folder) {
     .replace(/[^a-z0-9-_ ]/gi, '')
     .replace(/\s+/g, '_')
     .slice(0, 64) || 'Ungrouped';
+}
+
+function sanitizeAccountId(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9@._-]/g, '')
+    .slice(0, 120);
 }
