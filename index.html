@@ -1,0 +1,1747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SwarLok — World of Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;500;700;800&family=Noto+Serif+Devanagari:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #06040f;
+    --bg2: #0d0820;
+    --surface: rgba(255,255,255,0.04);
+    --surface2: rgba(255,255,255,0.08);
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --text: #e8e0f0;
+    --text2: #9b8fb0;
+    --text3: #6a5f7a;
+    --accent: #c084fc;
+    --accent2: #a855f7;
+    --accent3: #7c3aed;
+    --glow: rgba(192,132,252,0.15);
+    --glow2: rgba(192,132,252,0.3);
+    --gold: #fbbf24;
+    --gold2: #d97706;
+    --teal: #2dd4bf;
+    --font-display: 'Cormorant Garamond', serif;
+    --font-mono: 'Space Mono', monospace;
+    --font-ui: 'Syne', sans-serif;
+    --font-deva: 'Noto Serif Devanagari', serif;
+    --transition: 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
+  }
+  .vibe-lofi {
+    --bg: #1a1510; --bg2: #221c14; --accent: #d4a76a; --accent2: #b8864e;
+    --accent3: #8b5e3c; --glow: rgba(212,167,106,0.15); --glow2: rgba(212,167,106,0.3);
+    --text: #f0e8d8; --text2: #a89070; --surface: rgba(255,230,180,0.05);
+    --surface2: rgba(255,230,180,0.09); --border: rgba(255,220,160,0.1);
+  }
+  .vibe-techno {
+    --bg: #000408; --bg2: #010a12; --accent: #00d4ff; --accent2: #0099cc;
+    --accent3: #006699; --glow: rgba(0,212,255,0.12); --glow2: rgba(0,212,255,0.28);
+    --text: #c0e8f8; --text2: #5a9ab8; --surface: rgba(0,200,255,0.04);
+    --surface2: rgba(0,200,255,0.08); --border: rgba(0,200,255,0.1);
+  }
+  .vibe-classical {
+    --bg: #0f0c08; --bg2: #181410; --accent: #e8c87a; --accent2: #c9a84c;
+    --accent3: #a07830; --glow: rgba(232,200,122,0.12); --glow2: rgba(232,200,122,0.28);
+    --text: #f5f0e8; --text2: #a09070; --surface: rgba(255,240,200,0.04);
+    --surface2: rgba(255,240,200,0.08); --border: rgba(255,240,180,0.09);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    overflow-x: hidden;
+    transition: background 0.8s ease, color 0.8s ease;
+  }
+
+  /* ── INTRO SCREEN ── */
+  #intro {
+    position: fixed; inset: 0; z-index: 9999;
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column;
+  }
+  #intro.fade-out { animation: introFade 1.2s ease forwards; }
+  @keyframes introFade { to { opacity:0; pointer-events:none; } }
+  .music-word {
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 8vw, 7rem);
+    font-weight: 300;
+    font-style: italic;
+    color: #fff;
+    position: absolute;
+    letter-spacing: 0.05em;
+    opacity: 0;
+    animation: wordPulse 1.2s ease-in-out forwards;
+  }
+  @keyframes wordPulse {
+    0% { opacity:0; transform: translateY(12px) scale(0.97); }
+    30% { opacity:1; transform: translateY(0) scale(1); }
+    70% { opacity:1; transform: translateY(0) scale(1); }
+    100% { opacity:0; transform: translateY(-12px) scale(1.02); }
+  }
+  #swarlok-title {
+    font-family: var(--font-display);
+    font-size: clamp(4rem, 12vw, 11rem);
+    font-weight: 300;
+    letter-spacing: 0.12em;
+    color: #fff;
+    opacity: 0;
+    animation: titleReveal 2s ease 0.4s forwards;
+    position: relative;
+    text-align: center;
+  }
+  #swarlok-title::after {
+    content: '';
+    position: absolute; bottom: -8px; left: 10%; right: 10%; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(192,132,252,0.8), transparent);
+    animation: lineGrow 1.5s ease 1s forwards;
+    transform: scaleX(0);
+  }
+  @keyframes titleReveal {
+    0% { opacity:0; filter: blur(20px); letter-spacing: 0.4em; }
+    100% { opacity:1; filter: blur(0); letter-spacing: 0.12em; }
+  }
+  @keyframes lineGrow { from {transform:scaleX(0)} to {transform:scaleX(1)} }
+  #intro-subtitle {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.35em;
+    color: rgba(192,132,252,0.7);
+    margin-top: 1.5rem;
+    opacity: 0;
+    text-transform: uppercase;
+    animation: fadeUp 1s ease 1.8s forwards;
+  }
+  @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+  #intro-enter {
+    margin-top: 4rem;
+    padding: 0.75rem 2.5rem;
+    border: 1px solid rgba(192,132,252,0.4);
+    background: transparent;
+    color: rgba(192,132,252,0.9);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    cursor: pointer;
+    opacity: 0;
+    animation: fadeUp 1s ease 2.4s forwards;
+    transition: all 0.3s;
+  }
+  #intro-enter:hover {
+    background: rgba(192,132,252,0.1);
+    border-color: rgba(192,132,252,0.8);
+    color: #c084fc;
+    box-shadow: 0 0 30px rgba(192,132,252,0.2);
+  }
+
+  /* ── NAV ── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    padding: 1.2rem 2.5rem;
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(6,4,15,0.7);
+    backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    transition: background 0.8s, border-color 0.8s;
+  }
+  .nav-logo {
+    display: flex; align-items: center; gap: 0.75rem;
+    cursor: pointer;
+  }
+  .logo-mark {
+    width: 36px; height: 36px;
+    position: relative;
+  }
+  .logo-mark svg { width: 100%; height: 100%; }
+  .logo-text {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    color: var(--text);
+  }
+  .logo-text span { color: var(--accent); }
+  .nav-links {
+    display: flex; gap: 2rem; list-style: none;
+  }
+  .nav-links a {
+    color: var(--text2);
+    text-decoration: none;
+    font-size: 0.78rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: color 0.3s;
+  }
+  .nav-links a:hover { color: var(--accent); }
+  .nav-right { display: flex; gap: 1rem; align-items: center; }
+  .btn-sm {
+    padding: 0.5rem 1.25rem;
+    font-family: var(--font-ui);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    border: 1px solid var(--border2);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.3s;
+  }
+  .btn-sm:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+  .btn-primary {
+    background: var(--accent3);
+    border-color: var(--accent2);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--accent2); color: #fff; box-shadow: 0 0 20px var(--glow2); }
+
+  /* ── VIBE SELECTOR ── */
+  .vibe-bar {
+    display: flex; gap: 0.5rem; align-items: center;
+    font-size: 0.7rem; letter-spacing: 0.1em;
+    color: var(--text3); text-transform: uppercase;
+  }
+  .vibe-pill {
+    padding: 0.3rem 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    background: var(--surface);
+    color: var(--text2);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.35s;
+    font-family: var(--font-ui);
+  }
+  .vibe-pill:hover, .vibe-pill.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--glow);
+  }
+
+  /* ── HERO ── */
+  #hero {
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    padding: 8rem 2rem 4rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero-orb {
+    position: absolute; border-radius: 50%;
+    filter: blur(80px); pointer-events: none;
+    transition: background 0.8s;
+  }
+  .orb1 { width: 500px; height: 500px; background: var(--glow); top: -100px; left: -100px; }
+  .orb2 { width: 400px; height: 400px; background: rgba(45,212,191,0.06); bottom: 0; right: -80px; }
+  .hero-tag {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.35em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 1.5rem;
+    opacity: 0.8;
+  }
+  .hero-title {
+    font-family: var(--font-display);
+    font-size: clamp(3rem, 7vw, 6.5rem);
+    font-weight: 300;
+    line-height: 1.08;
+    max-width: 820px;
+    margin-bottom: 1.5rem;
+    font-style: italic;
+  }
+  .hero-title em { color: var(--accent); font-style: italic; }
+  .hero-poem {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 300;
+    color: var(--text2);
+    line-height: 1.9;
+    max-width: 560px;
+    margin-bottom: 3rem;
+    font-style: italic;
+  }
+  .hero-actions { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+  .btn-hero {
+    padding: 0.9rem 2.5rem;
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border: 1px solid var(--accent2);
+    background: linear-gradient(135deg, var(--accent3), rgba(168,85,247,0.6));
+    color: #fff;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.35s;
+  }
+  .btn-hero:hover { box-shadow: 0 0 40px var(--glow2); transform: translateY(-2px); }
+  .btn-hero-ghost {
+    padding: 0.9rem 2.5rem;
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text2);
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.35s;
+  }
+  .btn-hero-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── SECTIONS ── */
+  section { padding: 5rem 2rem; max-width: 1200px; margin: 0 auto; }
+  .section-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    letter-spacing: 0.35em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 0.75rem;
+  }
+  .section-title {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    font-weight: 300;
+    font-style: italic;
+    margin-bottom: 3rem;
+    line-height: 1.2;
+  }
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border2), transparent);
+    margin: 0;
+  }
+
+  /* ── TABS ── */
+  .tab-nav {
+    display: flex; gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2.5rem;
+  }
+  .tab-btn {
+    padding: 0.75rem 1.75rem;
+    font-family: var(--font-ui);
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border: none;
+    background: transparent;
+    color: var(--text3);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.3s;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* ── AUTH FORMS ── */
+  .auth-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: start; }
+  .form-group { margin-bottom: 1.25rem; }
+  .form-label {
+    display: block;
+    font-size: 0.72rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text2);
+    margin-bottom: 0.5rem;
+  }
+  .form-input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    transition: border-color 0.3s, box-shadow 0.3s;
+    outline: none;
+  }
+  .form-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--glow); }
+  .form-input::placeholder { color: var(--text3); }
+  .preference-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .pref-chip {
+    padding: 0.4rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    font-size: 0.75rem;
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--surface);
+    font-family: var(--font-ui);
+  }
+  .pref-chip.selected { border-color: var(--accent); color: var(--accent); background: var(--glow); }
+  .auth-aside {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2rem;
+  }
+  .auth-aside h3 {
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 300;
+    font-style: italic;
+    margin-bottom: 1rem;
+    color: var(--accent);
+  }
+  .profile-avatar {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent3), var(--teal));
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-display);
+    font-size: 2rem;
+    color: #fff;
+    margin-bottom: 1rem;
+  }
+  .soulmate-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    transition: border-color 0.3s;
+  }
+  .soulmate-card:hover { border-color: var(--accent); }
+  .soulmate-avatar {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem; color: #fff; flex-shrink: 0;
+  }
+  .match-bar {
+    height: 3px; background: var(--border);
+    border-radius: 2px; overflow: hidden; flex: 1;
+    margin-top: 4px;
+  }
+  .match-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+
+  /* ── PLAYER ── */
+  #player-section { position: relative; }
+  .player-shell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    backdrop-filter: blur(20px);
+  }
+  .player-top {
+    display: grid; grid-template-columns: 1fr 2fr 1fr;
+    align-items: center;
+    padding: 1.5rem 2rem;
+    gap: 1.5rem;
+  }
+  .track-info { display: flex; align-items: center; gap: 1rem; }
+  .track-art {
+    width: 56px; height: 56px; border-radius: 6px;
+    background: linear-gradient(135deg, var(--accent3), var(--teal));
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.5rem;
+    position: relative; overflow: hidden;
+  }
+  .track-art-inner { animation: spin 8s linear infinite paused; }
+  .playing .track-art-inner { animation-play-state: running; }
+  @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+  .track-name { font-size: 0.95rem; font-weight: 500; margin-bottom: 2px; }
+  .track-artist { font-size: 0.8rem; color: var(--text2); }
+  .player-controls { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+  .ctrl-btns { display: flex; align-items: center; gap: 1.25rem; }
+  .ctrl-btn {
+    background: none; border: none; color: var(--text2);
+    cursor: pointer; font-size: 1.1rem;
+    transition: color 0.25s, transform 0.2s;
+    display: flex; align-items: center;
+    width: 32px; height: 32px; justify-content: center;
+  }
+  .ctrl-btn:hover { color: var(--accent); }
+  .play-btn {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none; cursor: pointer;
+    color: #fff; font-size: 1.1rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.3s;
+    box-shadow: 0 0 20px var(--glow2);
+  }
+  .play-btn:hover { transform: scale(1.08); box-shadow: 0 0 30px var(--glow2); }
+  .progress-bar-wrap {
+    width: 100%;
+    display: flex; align-items: center; gap: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--text3);
+  }
+  .progress-bar {
+    flex: 1; height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+    position: relative;
+    overflow: visible;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent3), var(--accent));
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.1s;
+    position: relative;
+  }
+  .progress-fill::after {
+    content: '';
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent);
+    position: absolute; right: -5px; top: -3.5px;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .progress-bar:hover .progress-fill::after { opacity: 1; }
+  .player-right {
+    display: flex; align-items: center; gap: 0.75rem;
+    justify-content: flex-end;
+  }
+  .volume-slider {
+    -webkit-appearance: none;
+    width: 80px; height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+  }
+  .volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  .player-tabs {
+    display: flex;
+    border-top: 1px solid var(--border);
+    padding: 0 2rem;
+    gap: 0;
+  }
+  .player-tab-btn {
+    padding: 0.85rem 1.5rem;
+    background: none; border: none;
+    color: var(--text3);
+    font-family: var(--font-ui);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.3s;
+    margin-bottom: -1px;
+  }
+  .player-tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .player-pane { display: none; padding: 1.5rem 2rem; }
+  .player-pane.active { display: block; }
+  .queue-item {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.2s;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .queue-item:hover { background: var(--surface2); padding-left: 0.5rem; }
+  .queue-num { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text3); width: 20px; }
+  .queue-art {
+    width: 36px; height: 36px; border-radius: 4px;
+    background: linear-gradient(135deg, var(--accent3), var(--teal));
+    flex-shrink: 0;
+  }
+  .queue-name { font-size: 0.85rem; }
+  .queue-duration { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text3); margin-left: auto; }
+
+  /* ── IMPORT ── */
+  .import-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  .import-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 2rem;
+    text-align: center;
+    transition: all 0.35s;
+    cursor: pointer;
+  }
+  .import-card:hover { border-color: var(--accent); box-shadow: 0 0 30px var(--glow); transform: translateY(-3px); }
+  .import-icon { font-size: 2.5rem; margin-bottom: 1rem; }
+  .import-title { font-size: 1rem; font-weight: 500; margin-bottom: 0.4rem; }
+  .import-desc { font-size: 0.8rem; color: var(--text2); line-height: 1.6; }
+  .import-badge {
+    display: inline-block;
+    margin-top: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    font-size: 0.65rem;
+    letter-spacing: 0.1em;
+    color: var(--text3);
+    text-transform: uppercase;
+  }
+  #file-input { display: none; }
+  .track-list { margin-top: 1.5rem; }
+  .track-list-item {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    border-radius: 6px;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  .track-list-item:hover { background: var(--surface2); }
+  .tli-art {
+    width: 42px; height: 42px; border-radius: 5px;
+    background: linear-gradient(135deg, var(--accent3), var(--teal));
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.1rem;
+  }
+  .tli-info { flex: 1; }
+  .tli-name { font-size: 0.88rem; margin-bottom: 2px; }
+  .tli-artist { font-size: 0.75rem; color: var(--text2); }
+  .tli-size { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text3); }
+
+  /* ── JAM ROOM ── */
+  .jam-shell {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .jam-header {
+    padding: 1.25rem 2rem;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .jam-title { font-size: 1rem; font-weight: 500; }
+  .jam-status {
+    display: flex; align-items: center; gap: 0.5rem;
+    font-family: var(--font-mono); font-size: 0.7rem;
+    color: #22c55e;
+  }
+  .status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #22c55e;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .jam-body { display: grid; grid-template-columns: 1fr 320px; }
+  .jam-player { padding: 2rem; border-right: 1px solid var(--border); }
+  .jam-art {
+    width: 100%; aspect-ratio: 1;
+    max-width: 240px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent3), var(--teal));
+    margin: 0 auto 1.5rem;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 4rem;
+    position: relative;
+  }
+  .jam-art::after {
+    content: '';
+    position: absolute; inset: -3px;
+    border-radius: 13px;
+    border: 1px solid var(--accent);
+    opacity: 0.4;
+    animation: jamGlow 3s ease-in-out infinite;
+  }
+  @keyframes jamGlow { 0%,100%{opacity:0.2} 50%{opacity:0.6} }
+  .jam-track-name { font-family: var(--font-display); font-size: 1.6rem; font-weight: 300; font-style: italic; text-align: center; margin-bottom: 0.25rem; }
+  .jam-track-artist { text-align: center; color: var(--text2); font-size: 0.85rem; margin-bottom: 1.5rem; }
+  .listeners {
+    display: flex; align-items: center; gap: -8px;
+    justify-content: center; margin-bottom: 1.5rem;
+  }
+  .listener-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 2px solid var(--bg);
+    margin-left: -8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 500; color: #fff;
+  }
+  .listener-avatar:first-child { margin-left: 0; }
+  .listener-count {
+    font-family: var(--font-mono);
+    font-size: 0.7rem; color: var(--text2);
+    margin-left: 0.75rem;
+  }
+  .jam-chat {
+    display: flex; flex-direction: column;
+    height: 420px;
+  }
+  .chat-messages {
+    flex: 1; overflow-y: auto;
+    padding: 1rem;
+    display: flex; flex-direction: column; gap: 0.75rem;
+  }
+  .chat-messages::-webkit-scrollbar { width: 4px; }
+  .chat-messages::-webkit-scrollbar-track { background: transparent; }
+  .chat-messages::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+  .chat-msg {
+    display: flex; gap: 0.6rem; align-items: flex-start;
+  }
+  .chat-avatar {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; font-weight: 500; color: #fff;
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .chat-bubble {
+    background: var(--surface2);
+    border-radius: 0 8px 8px 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    max-width: calc(100% - 40px);
+  }
+  .chat-user { font-size: 0.68rem; color: var(--accent); margin-bottom: 2px; }
+  .chat-input-wrap {
+    padding: 0.75rem;
+    border-top: 1px solid var(--border);
+    display: flex; gap: 0.5rem;
+  }
+  .chat-input {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 0.82rem;
+    outline: none;
+    transition: border-color 0.3s;
+  }
+  .chat-input:focus { border-color: var(--accent); }
+  .chat-send {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: var(--accent2);
+    border: none; cursor: pointer;
+    color: #fff; font-size: 0.9rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.3s;
+    flex-shrink: 0;
+  }
+  .chat-send:hover { background: var(--accent); box-shadow: 0 0 15px var(--glow2); }
+  .jam-code-row {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface2);
+    border-top: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 0.72rem;
+    color: var(--text2);
+  }
+  .jam-code { color: var(--accent); letter-spacing: 0.15em; }
+
+  /* ── SOCIAL ── */
+  .social-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
+  .social-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.5rem;
+    transition: all 0.3s;
+  }
+  .social-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .sc-avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    margin-bottom: 0.75rem;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.3rem; font-weight: 500; color: #fff;
+  }
+  .sc-name { font-size: 0.95rem; font-weight: 500; margin-bottom: 2px; }
+  .sc-handle { font-size: 0.75rem; color: var(--text2); margin-bottom: 0.75rem; }
+  .sc-genres { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
+  .sc-genre {
+    padding: 0.2rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 50px;
+    font-size: 0.65rem;
+    color: var(--text3);
+  }
+  .sc-match {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+  .sc-actions { display: flex; gap: 0.5rem; }
+  .sc-btn {
+    flex: 1; padding: 0.4rem;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text2);
+    font-family: var(--font-ui);
+    font-size: 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-align: center;
+  }
+  .sc-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .sc-btn.primary { background: var(--accent3); border-color: var(--accent2); color: #fff; }
+  .sc-btn.primary:hover { background: var(--accent2); }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 3rem 2rem;
+    text-align: center;
+    color: var(--text3);
+    font-size: 0.78rem;
+    font-family: var(--font-mono);
+    letter-spacing: 0.1em;
+  }
+  footer span { color: var(--accent); }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 2.5rem;
+    max-width: 520px;
+    width: 90%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  .modal-close {
+    position: absolute; top: 1rem; right: 1rem;
+    background: none; border: none;
+    color: var(--text3); font-size: 1.2rem;
+    cursor: pointer; transition: color 0.3s;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-title {
+    font-family: var(--font-display);
+    font-size: 1.8rem;
+    font-weight: 300;
+    font-style: italic;
+    margin-bottom: 0.5rem;
+    color: var(--accent);
+  }
+  .modal-sub { font-size: 0.82rem; color: var(--text2); margin-bottom: 2rem; line-height: 1.6; }
+  .step-indicator {
+    display: flex; gap: 0.5rem; margin-bottom: 2rem;
+  }
+  .step-dot {
+    flex: 1; height: 2px;
+    background: var(--border);
+    border-radius: 1px;
+    transition: background 0.3s;
+  }
+  .step-dot.done { background: var(--accent); }
+
+  /* ── TOAST ── */
+  #toast {
+    position: fixed; bottom: 2rem; right: 2rem;
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    font-size: 0.85rem;
+    z-index: 9000;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
+    max-width: 320px;
+    backdrop-filter: blur(20px);
+  }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast-msg { color: var(--text); }
+
+  /* ── SCROLL animations ── */
+  .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.7s, transform 0.7s; }
+  .revealed { opacity: 1; transform: none; }
+
+  @media (max-width: 768px) {
+    .auth-grid, .import-grid, .jam-body, .social-grid { grid-template-columns: 1fr; }
+    .player-top { grid-template-columns: 1fr; text-align: center; }
+    .player-right { justify-content: center; }
+    .nav-links { display: none; }
+    .jam-chat { height: 300px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ── INTRO ── -->
+<div id="intro">
+  <div id="word-container"></div>
+  <div id="swarlok-title">SwarLok</div>
+  <div id="intro-subtitle">स्वरलोक · World of Notes · Monde des Sons</div>
+  <button id="intro-enter" onclick="enterSite()">Enter the World ›</button>
+</div>
+
+<!-- ── NAV ── -->
+<nav id="navbar">
+  <div class="nav-logo" onclick="scrollTo({top:0,behavior:'smooth'})">
+    <div class="logo-mark">
+      <svg viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="18" cy="18" r="17" stroke="currentColor" stroke-opacity="0.3" stroke-width="1"/>
+        <path d="M12 24 L12 16 L18 13 L18 21" stroke="var(--accent)" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="10.5" cy="24" r="2.5" fill="var(--accent)"/>
+        <circle cx="16.5" cy="21" r="2.5" fill="var(--accent)" fill-opacity="0.7"/>
+        <path d="M22 22 Q22 14 28 12" stroke="var(--text2)" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+        <path d="M24 21.5 Q24 16 28 15" stroke="var(--text3)" stroke-width="1" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="logo-text">Swar<span>Lok</span></div>
+  </div>
+  <ul class="nav-links">
+    <li><a href="#player-section">Player</a></li>
+    <li><a href="#import-section">Import</a></li>
+    <li><a href="#jam-section">Jam Room</a></li>
+    <li><a href="#social-section">Social</a></li>
+  </ul>
+  <div class="nav-right">
+    <div class="vibe-bar">
+      <span>Vibe:</span>
+      <button class="vibe-pill active" onclick="setVibe('')">Default</button>
+      <button class="vibe-pill" onclick="setVibe('lofi')">Lo-fi</button>
+      <button class="vibe-pill" onclick="setVibe('techno')">Techno</button>
+      <button class="vibe-pill" onclick="setVibe('classical')">Classical</button>
+    </div>
+    <button class="btn-sm" onclick="openModal('login')">Sign In</button>
+    <button class="btn-sm btn-primary" onclick="openModal('register')">Join Free</button>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section id="hero">
+  <div class="hero-orb orb1"></div>
+  <div class="hero-orb orb2"></div>
+  <div class="hero-tag">स्वरलोक — World of Notes</div>
+  <h1 class="hero-title">Where every note <em>heals</em> a silence</h1>
+  <p class="hero-poem">
+    "In the space between two beats lives a universe.<br>
+    SwarLok is not a platform — it is a pilgrimage.<br>
+    A place where sound becomes memory,<br>
+    and music becomes <em>medicine</em>."
+  </p>
+  <div class="hero-actions">
+    <button class="btn-hero" onclick="openModal('register')">Begin Your Journey</button>
+    <button class="btn-hero-ghost" onclick="document.getElementById('player-section').scrollIntoView({behavior:'smooth'})">Explore the Player</button>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── PLAYER ── -->
+<section id="player-section">
+  <div class="section-label reveal">Core Experience</div>
+  <div class="section-title reveal">The Player</div>
+  <div class="player-shell reveal" id="playerShell">
+    <div class="player-top">
+      <div class="track-info">
+        <div class="track-art">
+          <div class="track-art-inner">♪</div>
+        </div>
+        <div>
+          <div class="track-name" id="trackName">Raag Yaman</div>
+          <div class="track-artist" id="trackArtist">Pt. Hariprasad Chaurasia</div>
+        </div>
+      </div>
+      <div class="player-controls">
+        <div class="ctrl-btns">
+          <button class="ctrl-btn" onclick="prevTrack()" title="Previous">⏮</button>
+          <button class="ctrl-btn" onclick="toggleShuffle()" id="shuffleBtn" title="Shuffle">⇄</button>
+          <button class="play-btn" onclick="togglePlay()" id="playBtn">▶</button>
+          <button class="ctrl-btn" onclick="toggleRepeat()" id="repeatBtn" title="Repeat">↻</button>
+          <button class="ctrl-btn" onclick="nextTrack()" title="Next">⏭</button>
+        </div>
+        <div class="progress-bar-wrap">
+          <span id="currentTime">0:00</span>
+          <div class="progress-bar" id="progressBar" onclick="seekAudio(event)">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <span id="duration">0:00</span>
+        </div>
+      </div>
+      <div class="player-right">
+        <span style="font-size:1rem;">🔈</span>
+        <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.01" value="0.8" oninput="setVolume(this.value)">
+        <button class="ctrl-btn" onclick="showToast('❤️ Added to favourites')" title="Like">♡</button>
+        <button class="ctrl-btn" onclick="showToast('📋 Added to queue')" title="Queue">≡</button>
+      </div>
+    </div>
+    <div style="display:flex; gap:0;" class="player-tabs" id="playerTabNav">
+      <button class="player-tab-btn active" onclick="playerTab('queue')">Queue</button>
+      <button class="player-tab-btn" onclick="playerTab('equalizer')">Equalizer</button>
+      <button class="player-tab-btn" onclick="playerTab('lyrics')">Lyrics</button>
+    </div>
+    <div class="player-pane active" id="pane-queue">
+      <div id="queueList"></div>
+    </div>
+    <div class="player-pane" id="pane-equalizer">
+      <div style="display:flex; gap:1.5rem; align-items:flex-end; justify-content:center; padding:1rem 0;">
+        <div id="eqBands"></div>
+      </div>
+      <p style="text-align:center; font-size:0.75rem; color:var(--text3); margin-top:1rem; font-family:var(--font-mono);">Web Audio API equalizer — drag sliders to adjust frequency bands</p>
+    </div>
+    <div class="player-pane" id="pane-lyrics">
+      <div style="font-family:var(--font-display); font-size:1rem; line-height:2; font-style:italic; color:var(--text2); max-width:500px; margin:0 auto; text-align:center;">
+        <p>Raag Yaman unfolds in the evening sky,</p>
+        <p style="color:var(--accent);">Each note a prayer, rising high…</p>
+        <p>The flute calls to the wandering soul,</p>
+        <p style="color:var(--accent);">And makes the fractured spirit whole.</p>
+        <p style="margin-top:1rem; font-size:0.8rem; color:var(--text3);">— Traditional, transcribed with care</p>
+      </div>
+    </div>
+  </div>
+  <audio id="audioPlayer" style="display:none"></audio>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── IMPORT ── -->
+<section id="import-section">
+  <div class="section-label reveal">Bring Your Music</div>
+  <div class="section-title reveal">Universal Import</div>
+  <div class="import-grid reveal">
+    <div class="import-card" onclick="document.getElementById('file-input').click()">
+      <div class="import-icon">📁</div>
+      <div class="import-title">Local Files</div>
+      <div class="import-desc">Import MP3, WAV, FLAC, OGG from your device. Full offline playback with waveform visualization.</div>
+      <div class="import-badge">MP3 · WAV · FLAC · OGG</div>
+    </div>
+    <div class="import-card" onclick="simulateSpotify()">
+      <div class="import-icon" style="color:#1db954;">●</div>
+      <div class="import-title">Spotify Bridge</div>
+      <div class="import-desc">Connect your Spotify account to mirror your playlists and listening history into SwarLok.</div>
+      <div class="import-badge">OAuth Simulation</div>
+    </div>
+    <div class="import-card" onclick="simulateApple()">
+      <div class="import-icon">🎵</div>
+      <div class="import-title">Apple Music</div>
+      <div class="import-desc">Import your Apple Music playlists and curated stations via the MusicKit JS bridge.</div>
+      <div class="import-badge">MusicKit Bridge</div>
+    </div>
+    <div class="import-card" onclick="showToast('🔗 YouTube import coming soon')">
+      <div class="import-icon" style="color:#ff0000;">▶</div>
+      <div class="import-title">YouTube / SoundCloud</div>
+      <div class="import-desc">Import public playlists and channels for seamless discovery and archival.</div>
+      <div class="import-badge">Coming Soon</div>
+    </div>
+  </div>
+  <input type="file" id="file-input" accept="audio/*" multiple onchange="handleFileImport(event)">
+  <div id="track-list" class="track-list"></div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── JAM ROOM ── -->
+<section id="jam-section">
+  <div class="section-label reveal">Unique Feature</div>
+  <div class="section-title reveal">The Jam Room — Group Listen</div>
+  <div class="jam-shell reveal">
+    <div class="jam-header">
+      <div>
+        <div class="jam-title">Room: Midnight Ragas 🌙</div>
+        <div style="font-size:0.75rem; color:var(--text2); margin-top:2px; font-family:var(--font-mono);">Room ID: JAM-4829-SWAR</div>
+      </div>
+      <div style="display:flex; gap:1rem; align-items:center;">
+        <div class="jam-status"><div class="status-dot"></div> Live · 4 listeners</div>
+        <button class="btn-sm" onclick="copyRoomCode()">Copy Link</button>
+        <button class="btn-sm btn-primary" onclick="showToast('🎵 You are now the host')">Host</button>
+      </div>
+    </div>
+    <div class="jam-body">
+      <div class="jam-player">
+        <div class="jam-art">🎷</div>
+        <div class="jam-track-name">Raag Yaman</div>
+        <div class="jam-track-artist">Pt. Hariprasad Chaurasia · 1974</div>
+        <div class="listeners" id="listenerAvatars"></div>
+        <div class="progress-bar-wrap" style="margin-bottom:1.5rem;">
+          <span style="font-family:var(--font-mono); font-size:0.68rem; color:var(--text3);">12:34</span>
+          <div class="progress-bar">
+            <div class="progress-fill" style="width:38%"></div>
+          </div>
+          <span style="font-family:var(--font-mono); font-size:0.68rem; color:var(--text3);">32:17</span>
+        </div>
+        <div class="ctrl-btns" style="justify-content:center; margin-bottom:1.5rem;">
+          <button class="ctrl-btn">⏮</button>
+          <button class="play-btn" onclick="showToast('▶ Synced across all listeners')">▶</button>
+          <button class="ctrl-btn">⏭</button>
+        </div>
+        <div style="text-align:center; font-size:0.75rem; color:var(--text3); font-family:var(--font-mono);">
+          ⚡ WebSocket sync · &lt;50ms latency
+        </div>
+      </div>
+      <div class="jam-chat" id="jamChat">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="jam-code-row">Room code: <span class="jam-code">JAM-4829-SWAR</span></div>
+        <div class="chat-input-wrap">
+          <input class="chat-input" id="chatInput" placeholder="Send a vibe…" onkeydown="if(event.key==='Enter')sendChatMsg()">
+          <button class="chat-send" onclick="sendChatMsg()">→</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-top:1.5rem;">
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.25rem; text-align:center;">
+      <div style="font-size:1.5rem; margin-bottom:0.5rem;">⚡</div>
+      <div style="font-size:0.85rem; font-weight:500; margin-bottom:0.3rem;">Real-time Sync</div>
+      <div style="font-size:0.75rem; color:var(--text2);">WebSocket via Cloudflare Durable Objects keeps seek-bars in perfect sync</div>
+    </div>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.25rem; text-align:center;">
+      <div style="font-size:1.5rem; margin-bottom:0.5rem;">💬</div>
+      <div style="font-size:0.85rem; font-weight:500; margin-bottom:0.3rem;">Glassmorphism Chat</div>
+      <div style="font-size:0.75rem; color:var(--text2);">Live reactions, emoji stamps, and lyric-sync chat overlay</div>
+    </div>
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:1.25rem; text-align:center;">
+      <div style="font-size:1.5rem; margin-bottom:0.5rem;">🔒</div>
+      <div style="font-size:0.85rem; font-weight:500; margin-bottom:0.3rem;">Private Rooms</div>
+      <div style="font-size:0.75rem; color:var(--text2);">Password-protected sessions for intimate listening circles</div>
+    </div>
+  </div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── SOCIAL / AUTH ── -->
+<section id="social-section">
+  <div class="section-label reveal">Connection</div>
+  <div class="section-title reveal">Music Soulmates</div>
+  <div class="social-grid reveal" id="soulmateGrid"></div>
+</section>
+
+<div class="divider"></div>
+
+<!-- ── ONBOARDING / AUTH ── -->
+<section id="auth-section">
+  <div class="section-label reveal">Your Profile</div>
+  <div class="section-title reveal">Join SwarLok</div>
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('login-tab','tab-btn',this)">Sign In</button>
+    <button class="tab-btn" onclick="switchTab('register-tab','tab-btn',this)">Register</button>
+    <button class="tab-btn" onclick="switchTab('profile-tab','tab-btn',this)">My Profile</button>
+  </div>
+  <div class="tab-content active" id="login-tab">
+    <div class="auth-grid">
+      <div>
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-input" placeholder="your@email.com" id="loginEmail">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" class="form-input" placeholder="••••••••" id="loginPass">
+        </div>
+        <button class="btn-hero" style="width:100%; margin-top:0.5rem;" onclick="doLogin()">Enter SwarLok →</button>
+        <p style="font-size:0.78rem; color:var(--text3); margin-top:1rem; text-align:center;">Forgot your note? <a href="#" style="color:var(--accent);">Reset melody</a></p>
+      </div>
+      <div class="auth-aside">
+        <h3>Welcome back,<br>wanderer.</h3>
+        <p style="font-size:0.82rem; color:var(--text2); line-height:1.8; font-family:var(--font-display); font-style:italic;">"Your music memory is waiting — playlists, jam rooms, and the friends who share your frequency."</p>
+        <div style="margin-top:1.5rem; display:flex; flex-direction:column; gap:0.5rem;">
+          <button class="btn-sm" onclick="showToast('🔗 Google OAuth coming soon')">Continue with Google</button>
+          <button class="btn-sm" onclick="showToast('🍎 Apple Sign-in coming soon')">Continue with Apple</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tab-content" id="register-tab">
+    <div class="auth-grid">
+      <div>
+        <div class="step-indicator" id="stepIndicator">
+          <div class="step-dot done" id="step1dot"></div>
+          <div class="step-dot" id="step2dot"></div>
+          <div class="step-dot" id="step3dot"></div>
+        </div>
+        <div id="reg-step-1">
+          <div class="form-group">
+            <label class="form-label">Display Name</label>
+            <input type="text" class="form-input" placeholder="SoundSeeker" id="regName">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-input" placeholder="your@email.com" id="regEmail">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <input type="password" class="form-input" placeholder="••••••••" id="regPass">
+          </div>
+          <button class="btn-hero" onclick="regStep(2)">Next: Your Taste →</button>
+        </div>
+        <div id="reg-step-2" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Favourite Genres</label>
+            <div class="preference-chips" id="genreChips"></div>
+          </div>
+          <div class="form-group" style="margin-top:1rem;">
+            <label class="form-label">Instruments You Love</label>
+            <div class="preference-chips" id="instrumentChips"></div>
+          </div>
+          <button class="btn-hero" onclick="regStep(3)" style="margin-top:1rem;">Next: Emotional Vibe →</button>
+        </div>
+        <div id="reg-step-3" style="display:none;">
+          <div class="form-group">
+            <label class="form-label">Music Heals You When…</label>
+            <div class="preference-chips" id="triggerChips"></div>
+          </div>
+          <button class="btn-hero" onclick="completeRegistration()" style="margin-top:1.5rem;">Create My SwarLok →</button>
+        </div>
+      </div>
+      <div class="auth-aside">
+        <h3>Your musical soul awaits.</h3>
+        <p style="font-size:0.82rem; color:var(--text2); line-height:1.8; font-family:var(--font-display); font-style:italic;">"Tell us your frequencies and we'll find your musical soulmates — people who feel music the way you do."</p>
+        <div style="margin-top:1.5rem; padding:1rem; background:var(--surface2); border-radius:8px; font-size:0.78rem; color:var(--text2);">
+          <div>✓ Unlimited local file import</div>
+          <div>✓ Jam rooms (up to 12 listeners)</div>
+          <div>✓ Music Soulmate matching</div>
+          <div>✓ Vibe-Sync themes</div>
+          <div>✓ Cloudflare-backed sync</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="tab-content" id="profile-tab">
+    <div style="text-align:center; padding:2rem; font-family:var(--font-display); font-style:italic; color:var(--text2);">
+      <div style="font-size:4rem; margin-bottom:1rem;">🎵</div>
+      Sign in to view your profile and listening history.
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div style="font-family:var(--font-display); font-style:italic; font-size:1.5rem; color:var(--text2); margin-bottom:1rem;">SwarLok</div>
+  <div>स्वरलोक · <span>World of Notes</span> · Built with Cloudflare Workers + KV + Durable Objects</div>
+  <div style="margin-top:0.5rem;">Frontend: Vanilla JS SPA · Audio: Web Audio API · Sync: WebSocket · Storage: LocalStorage + CF KV</div>
+</footer>
+
+<!-- ── MODALS ── -->
+<div class="modal-overlay" id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div id="modal-content"></div>
+  </div>
+</div>
+
+<!-- ── TOAST ── -->
+<div id="toast"><div id="toast-msg"></div></div>
+
+<script>
+// ─── DATA ───
+const TRACKS = [
+  { name:'Raag Yaman', artist:'Pt. Hariprasad Chaurasia', duration:'32:17', icon:'🎷' },
+  { name:'Bhairavi Ki Raat', artist:'Ustad Rashid Khan', duration:'18:42', icon:'🎶' },
+  { name:'Miles Ahead', artist:'Miles Davis', duration:'5:21', icon:'🎺' },
+  { name:'Gymnopédie No.1', artist:'Erik Satie', duration:'3:03', icon:'🎹' },
+  { name:'Teardrop', artist:'Massive Attack', duration:'5:29', icon:'🌊' },
+  { name:'Arabesque No.1', artist:'Claude Debussy', duration:'4:12', icon:'🌸' },
+];
+const SOULMATES = [
+  { name:'Arjun Mehta', handle:'@raagnista', genres:['Classical','Jazz'], match:94, color:'#7c3aed' },
+  { name:'Priya Krishnan', handle:'@sufisoul', genres:['Sufi','Ambient','Folk'], match:88, color:'#0891b2' },
+  { name:'Dev Anand', handle:'@lo_fi_dev', genres:['Lo-fi','Chillhop'], match:81, color:'#d97706' },
+  { name:'Zara Khan', handle:'@electronica_z', genres:['Techno','Ambient'], match:76, color:'#059669' },
+  { name:'Rohan Sahu', handle:'@sitar_waves', genres:['Classical','Fusion'], match:72, color:'#dc2626' },
+  { name:'Meera Iyer', handle:'@classicalm', genres:['Carnatic','Konnakol'], match:68, color:'#7c3aed' },
+];
+const GENRES = ['Classical','Jazz','Lo-fi','Sufi','Ambient','Techno','Folk','Blues','Fusion','Carnatic','Hindustani','Electronic'];
+const INSTRUMENTS = ['Sitar','Tabla','Flute','Piano','Guitar','Violin','Saxophone','Vocals','Synthesizer','Drums'];
+const TRIGGERS = ['Feeling Lonely','After Heartbreak','Need to Focus','Finding Calm','Celebrating Joy','Processing Grief','Morning Ritual','Late Night Thoughts'];
+const CHAT_MSGS = [
+  { user:'Arjun', color:'#7c3aed', msg:'This raag hits different at midnight 🌙' },
+  { user:'Priya', color:'#0891b2', msg:'The alap section gives me chills every time' },
+  { user:'Dev', color:'#d97706', msg:'Anyone else feel like they\'re floating? 🌊' },
+  { user:'You', color:'#a855f7', msg:'Pure magic. This is why SwarLok exists.' },
+];
+
+// ─── STATE ───
+let isPlaying = false, currentTrack = 0, currentTime = 0, duration = 0;
+let isShuffled = false, isRepeat = false;
+let audioCtx = null, analyser = null;
+const audio = document.getElementById('audioPlayer');
+let localTracks = JSON.parse(localStorage.getItem('swarlok_tracks') || '[]');
+let currentUser = JSON.parse(localStorage.getItem('swarlok_user') || 'null');
+let selectedGenres = [], selectedInstruments = [], selectedTriggers = [];
+let regCurrentStep = 1;
+let eqNodes = [], eqFreqs = [60,250,500,1000,4000,8000,16000];
+
+// ─── INTRO ───
+const WORDS = [
+  { text:'Sangeet', lang:'Sanskrit' },
+  { text:'Musik', lang:'Deutsch' },
+  { text:'Musique', lang:'Français' },
+  { text:'Música', lang:'Español' },
+  { text:'موسیقی', lang:'Farsi' },
+  { text:'संगीत', lang:'Hindi' },
+  { text:'音楽', lang:'Japanese' },
+  { text:'Musiikki', lang:'Finnish' },
+];
+let wordIdx = 0;
+function showNextWord() {
+  const container = document.getElementById('word-container');
+  container.innerHTML = '';
+  if (wordIdx >= WORDS.length) {
+    document.getElementById('swarlok-title').style.display = 'block';
+    document.getElementById('intro-subtitle').style.display = 'block';
+    document.getElementById('intro-enter').style.display = 'inline-block';
+    return;
+  }
+  const el = document.createElement('div');
+  el.className = 'music-word';
+  el.textContent = WORDS[wordIdx].text;
+  container.appendChild(el);
+  wordIdx++;
+  setTimeout(showNextWord, 1300);
+}
+setTimeout(showNextWord, 400);
+
+function enterSite() {
+  document.getElementById('intro').classList.add('fade-out');
+  setTimeout(() => document.getElementById('intro').remove(), 1300);
+}
+
+// ─── VIBE ENGINE ───
+function setVibe(vibe) {
+  document.body.className = vibe ? `vibe-${vibe}` : '';
+  document.querySelectorAll('.vibe-pill').forEach(p => p.classList.remove('active'));
+  event.target.classList.add('active');
+  showToast(`🎨 Vibe-Sync: ${vibe || 'Default'} activated`);
+}
+
+// ─── TABS ───
+function switchTab(targetId, btnClass, btn) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll(`.${btnClass}`).forEach(b => b.classList.remove('active'));
+  document.getElementById(targetId).classList.add('active');
+  btn.classList.add('active');
+}
+function playerTab(pane) {
+  document.querySelectorAll('.player-pane').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.player-tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`pane-${pane}`).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// ─── PLAYER ───
+function renderQueue() {
+  const list = document.getElementById('queueList');
+  list.innerHTML = TRACKS.map((t,i) => `
+    <div class="queue-item ${i===currentTrack?'style="background:var(--surface2)"':''}">
+      <div class="queue-num">${i+1}</div>
+      <div class="queue-art" style="display:flex;align-items:center;justify-content:center;font-size:1.2rem;">${t.icon}</div>
+      <div style="flex:1;">
+        <div class="queue-name" style="${i===currentTrack?'color:var(--accent);':''}">${t.name}</div>
+        <div style="font-size:0.75rem;color:var(--text2);">${t.artist}</div>
+      </div>
+      <div class="queue-duration">${t.duration}</div>
+    </div>
+  `).join('');
+}
+
+function updateTrackDisplay() {
+  const t = TRACKS[currentTrack];
+  document.getElementById('trackName').textContent = t.name;
+  document.getElementById('trackArtist').textContent = t.artist;
+  renderQueue();
+}
+
+function togglePlay() {
+  isPlaying = !isPlaying;
+  document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
+  document.getElementById('playerShell').classList.toggle('playing', isPlaying);
+  if (audio.src) {
+    isPlaying ? audio.play() : audio.pause();
+  }
+  if (isPlaying && !audio.src) simulateProgress();
+}
+
+let progressInterval = null;
+function simulateProgress() {
+  if (!audio.src) {
+    let fake = 0;
+    clearInterval(progressInterval);
+    progressInterval = setInterval(() => {
+      if (!isPlaying) { clearInterval(progressInterval); return; }
+      fake += 1;
+      const total = 1937; // 32:17
+      const pct = Math.min((fake/total)*100, 100);
+      document.getElementById('progressFill').style.width = pct+'%';
+      document.getElementById('currentTime').textContent = formatTime(fake);
+      document.getElementById('duration').textContent = formatTime(total);
+      if (fake >= total) { clearInterval(progressInterval); isPlaying=false; document.getElementById('playBtn').textContent='▶'; }
+    }, 1000);
+  }
+}
+
+function formatTime(s) {
+  return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+}
+
+function seekAudio(e) {
+  const bar = e.currentTarget;
+  const pct = e.offsetX / bar.offsetWidth;
+  document.getElementById('progressFill').style.width = (pct*100)+'%';
+  if (audio.src && audio.duration) audio.currentTime = pct * audio.duration;
+}
+
+function setVolume(v) { audio.volume = parseFloat(v); }
+
+function nextTrack() {
+  currentTrack = (currentTrack+1)%TRACKS.length;
+  updateTrackDisplay();
+  if(isPlaying) simulateProgress();
+}
+function prevTrack() {
+  currentTrack = (currentTrack-1+TRACKS.length)%TRACKS.length;
+  updateTrackDisplay();
+}
+function toggleShuffle() {
+  isShuffled = !isShuffled;
+  document.getElementById('shuffleBtn').style.color = isShuffled ? 'var(--accent)' : '';
+  showToast(isShuffled ? '🔀 Shuffle on' : '🔀 Shuffle off');
+}
+function toggleRepeat() {
+  isRepeat = !isRepeat;
+  document.getElementById('repeatBtn').style.color = isRepeat ? 'var(--accent)' : '';
+  showToast(isRepeat ? '🔁 Repeat on' : '🔁 Repeat off');
+}
+
+audio.addEventListener('timeupdate', () => {
+  if (!audio.duration) return;
+  const pct = (audio.currentTime/audio.duration)*100;
+  document.getElementById('progressFill').style.width = pct+'%';
+  document.getElementById('currentTime').textContent = formatTime(Math.floor(audio.currentTime));
+  document.getElementById('duration').textContent = formatTime(Math.floor(audio.duration));
+});
+
+// ─── EQUALIZER ───
+function renderEQ() {
+  const wrap = document.getElementById('eqBands');
+  const labels = ['60Hz','250Hz','500Hz','1kHz','4kHz','8kHz','16kHz'];
+  wrap.style.cssText = 'display:flex; gap:1.5rem; align-items:flex-end; justify-content:center;';
+  wrap.innerHTML = labels.map((l,i) => `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;">
+      <span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--accent);" id="eq-val-${i}">0</span>
+      <input type="range" min="-12" max="12" value="0" step="1"
+        style="writing-mode:vertical-lr; direction:rtl; height:100px; cursor:pointer; -webkit-appearance:slider-vertical;"
+        oninput="updateEQ(${i},this.value)">
+      <span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text3);">${l}</span>
+    </div>
+  `).join('');
+}
+function updateEQ(band, val) {
+  document.getElementById(`eq-val-${band}`).textContent = (val>0?'+':'')+val+'dB';
+}
+
+// ─── FILE IMPORT ───
+function handleFileImport(e) {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  files.forEach(f => {
+    const entry = { name: f.name.replace(/\.[^.]+$/,''), artist:'Local File', size: formatSize(f.size), url: URL.createObjectURL(f) };
+    localTracks.push(entry);
+  });
+  localStorage.setItem('swarlok_tracks', JSON.stringify(localTracks.map(t => ({name:t.name,artist:t.artist,size:t.size}))));
+  renderTrackList();
+  showToast(`✅ Imported ${files.length} track${files.length>1?'s':''}`);
+  if (files.length > 0) { audio.src = localTracks[0].url; }
+}
+
+function formatSize(b) {
+  if (b<1024) return b+'B';
+  if (b<1024*1024) return (b/1024).toFixed(1)+'KB';
+  return (b/(1024*1024)).toFixed(1)+'MB';
+}
+
+function renderTrackList() {
+  const list = document.getElementById('track-list');
+  if (!localTracks.length) { list.innerHTML=''; return; }
+  list.innerHTML = `<div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text3);letter-spacing:0.2em;text-transform:uppercase;margin:1.5rem 0 0.75rem;">Local Library (${localTracks.length})</div>`
+    + localTracks.map((t,i) => `
+    <div class="track-list-item" onclick="playLocalTrack(${i})">
+      <div class="tli-art">🎵</div>
+      <div class="tli-info">
+        <div class="tli-name">${t.name}</div>
+        <div class="tli-artist">${t.artist}</div>
+      </div>
+      <div class="tli-size">${t.size||'—'}</div>
+    </div>
+  `).join('');
+}
+
+function playLocalTrack(i) {
+  if (localTracks[i].url) { audio.src = localTracks[i].url; audio.play(); isPlaying=true; document.getElementById('playBtn').textContent='⏸'; }
+  document.getElementById('trackName').textContent = localTracks[i].name;
+  document.getElementById('trackArtist').textContent = localTracks[i].artist;
+  document.getElementById('playerShell').classList.add('playing');
+}
+
+function simulateSpotify() {
+  showToast('🟢 Spotify OAuth flow initiated… (simulation)');
+  setTimeout(() => {
+    const fakeTracks = [
+      {name:'Midnight Rain',artist:'Taylor Swift',size:'4.2MB'},
+      {name:'Blinding Lights',artist:'The Weeknd',size:'5.1MB'},
+      {name:'As It Was',artist:'Harry Styles',size:'3.8MB'},
+    ];
+    fakeTracks.forEach(t => localTracks.push(t));
+    renderTrackList();
+    showToast('✅ 3 Spotify tracks imported!');
+  }, 2000);
+}
+
+function simulateApple() {
+  showToast('🎵 Apple MusicKit bridge activated… (simulation)');
+  setTimeout(() => {
+    localTracks.push({name:'Bohemian Rhapsody',artist:'Queen',size:'6.0MB'});
+    renderTrackList();
+    showToast('✅ Apple Music track imported!');
+  }, 1800);
+}
+
+// ─── JAM ROOM ───
+function renderListeners() {
+  const colors = ['#7c3aed','#0891b2','#d97706','#059669'];
+  const names = ['A','P','D','Z'];
+  const el = document.getElementById('listenerAvatars');
+  el.innerHTML = names.map((n,i) => `<div class="listener-avatar" style="background:${colors[i]}">${n}</div>`).join('');
+  el.innerHTML += '<span class="listener-count">+ 4 listening</span>';
+}
+
+function renderChatMessages() {
+  const el = document.getElementById('chatMessages');
+  el.innerHTML = CHAT_MSGS.map(m => `
+    <div class="chat-msg">
+      <div class="chat-avatar" style="background:${m.color}">${m.user[0]}</div>
+      <div class="chat-bubble">
+        <div class="chat-user">${m.user}</div>
+        ${m.msg}
+      </div>
+    </div>
+  `).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+function sendChatMsg() {
+  const input = document.getElementById('chatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  CHAT_MSGS.push({ user: currentUser?.name || 'You', color:'#a855f7', msg });
+  renderChatMessages();
+  input.value = '';
+  // Simulate CF Worker WebSocket response
+  setTimeout(() => {
+    const bots = ['Arjun','Priya','Dev'];
+    const replies = ['🎵','✨','That\'s the one!','Pure bliss.','🙌'];
+    CHAT_MSGS.push({ user:bots[Math.floor(Math.random()*3)], color:'#0891b2', msg:replies[Math.floor(Math.random()*replies.length)] });
+    renderChatMessages();
+  }, 800 + Math.random()*1500);
+}
+
+function copyRoomCode() {
+  navigator.clipboard?.writeText('https://swarlok.app/jam/JAM-4829-SWAR').catch(()=>{});
+  showToast('🔗 Room link copied to clipboard!');
+}
+
+// ─── SOCIAL ───
+function renderSoulmates() {
+  const el = document.getElementById('soulmateGrid');
+  el.innerHTML = SOULMATES.map(s => `
+    <div class="social-card">
+      <div class="sc-avatar" style="background:${s.color}">${s.name[0]}</div>
+      <div class="sc-name">${s.name}</div>
+      <div class="sc-handle">${s.handle}</div>
+      <div class="sc-genres">${s.genres.map(g=>`<span class="sc-genre">${g}</span>`).join('')}</div>
+      <div class="sc-match">🎵 ${s.match}% Match</div>
+      <div class="match-bar"><div class="match-fill" style="width:${s.match}%"></div></div>
+      <div style="margin-top:0.5rem;"></div>
+      <div class="sc-actions">
+        <button class="sc-btn primary" onclick="showToast('✉️ Friend request sent to ${s.name}!')">+ Connect</button>
+        <button class="sc-btn" onclick="showToast('🎵 Jam room invite sent!')">Jam</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ─── AUTH ───
+function doLogin() {
+  const email = document.getElementById('loginEmail').value;
+  const pass = document.getElementById('loginPass').value;
+  if (!email || !pass) { showToast('⚠️ Please fill all fields'); return; }
+  const user = { email, name: email.split('@')[0], loginAt: Date.now() };
+  localStorage.setItem('swarlok_user', JSON.stringify(user));
+  currentUser = user;
+  showToast(`🎵 Welcome back, ${user.name}!`);
+  updateProfileTab();
+}
+
+function regStep(step) {
+  document.getElementById(`reg-step-${regCurrentStep}`).style.display = 'none';
+  regCurrentStep = step;
+  document.getElementById(`reg-step-${step}`).style.display = 'block';
+  document.querySelectorAll('#stepIndicator .step-dot').forEach((d,i) => {
+    d.classList.toggle('done', i < step);
+  });
+}
+
+function renderChips(containerId, items, arr) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = items.map(item => `
+    <div class="pref-chip" onclick="toggleChip(this,'${item}',${JSON.stringify(arr).replace(/'/g,'&apos;')})">
+      ${item}
+    </div>
+  `).join('');
+}
+
+function toggleChip(el, val, arr) {
+  el.classList.toggle('selected');
+  const idx = arr.indexOf(val);
+  if (idx >= 0) arr.splice(idx,1); else arr.push(val);
+}
+
+function completeRegistration() {
+  const name = document.getElementById('regName').value || 'SoundSeeker';
+  const email = document.getElementById('regEmail').value;
+  if (!email) { showToast('⚠️ Email required'); return; }
+  const user = { name, email, genres: selectedGenres, instruments: selectedInstruments, triggers: selectedTriggers, joined: Date.now() };
+  localStorage.setItem('swarlok_user', JSON.stringify(user));
+  currentUser = user;
+  showToast(`🎉 Welcome to SwarLok, ${name}!`);
+  updateProfileTab();
+  regStep(1);
+}
+
+function updateProfileTab() {
+  if (!currentUser) return;
+  const el = document.getElementById('profile-tab');
+  el.innerHTML = `
+    <div style="max-width:500px;">
+      <div style="display:flex; align-items:center; gap:1.5rem; margin-bottom:2rem;">
+        <div class="profile-avatar">${(currentUser.name||'?')[0]}</div>
+        <div>
+          <div style="font-size:1.3rem; font-weight:500;">${currentUser.name}</div>
+          <div style="color:var(--text2); font-size:0.85rem;">${currentUser.email}</div>
+          <div style="font-family:var(--font-mono); font-size:0.68rem; color:var(--accent); margin-top:4px;">MEMBER</div>
+        </div>
+      </div>
+      ${currentUser.genres?.length ? `<div style="margin-bottom:1rem;"><div class="form-label">Your Genres</div><div class="preference-chips">${currentUser.genres.map(g=>`<div class="pref-chip selected">${g}</div>`).join('')}</div></div>` : ''}
+      <button class="btn-sm" onclick="localStorage.removeItem('swarlok_user');currentUser=null;showToast('👋 Signed out');updateProfileTab();">Sign Out</button>
+    </div>
+  `;
+}
+
+// ─── MODAL ───
+function openModal(type) {
+  const overlay = document.getElementById('modal-overlay');
+  const content = document.getElementById('modal-content');
+  overlay.classList.add('open');
+  if (type === 'login') {
+    content.innerHTML = `
+      <div class="modal-title">Welcome back</div>
+      <div class="modal-sub">Sign in to resume your musical journey on SwarLok.</div>
+      <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" placeholder="your@email.com" id="mLoginEmail"></div>
+      <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-input" placeholder="••••••••" id="mLoginPass"></div>
+      <button class="btn-hero" style="width:100%;margin-top:0.5rem;" onclick="modalLogin()">Enter SwarLok →</button>
+    `;
+  } else {
+    content.innerHTML = `
+      <div class="modal-title">Begin your journey</div>
+      <div class="modal-sub">Create your SwarLok profile and discover your musical soulmates.</div>
+      <div class="form-group"><label class="form-label">Display Name</label><input type="text" class="form-input" placeholder="SoundSeeker" id="mRegName"></div>
+      <div class="form-group"><label class="form-label">Email</label><input type="email" class="form-input" placeholder="your@email.com" id="mRegEmail"></div>
+      <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-input" placeholder="••••••••" id="mRegPass"></div>
+      <button class="btn-hero" style="width:100%;margin-top:0.5rem;" onclick="modalRegister()">Create Account →</button>
+    `;
+  }
+}
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+function modalLogin() {
+  const email = document.getElementById('mLoginEmail')?.value;
+  if (!email) { showToast('⚠️ Please fill in your email'); return; }
+  const user = { name: email.split('@')[0], email };
+  localStorage.setItem('swarlok_user', JSON.stringify(user));
+  currentUser = user;
+  closeModal();
+  showToast(`🎵 Welcome back, ${user.name}!`);
+  updateProfileTab();
+}
+function modalRegister() {
+  const name = document.getElementById('mRegName')?.value || 'SoundSeeker';
+  const email = document.getElementById('mRegEmail')?.value;
+  if (!email) { showToast('⚠️ Email required'); return; }
+  const user = { name, email, joined: Date.now() };
+  localStorage.setItem('swarlok_user', JSON.stringify(user));
+  currentUser = user;
+  closeModal();
+  showToast(`🎉 Welcome to SwarLok, ${name}!`);
+  updateProfileTab();
+}
+
+// ─── TOAST ───
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ─── SCROLL REVEAL ───
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => { if (e.isIntersecting) { e.target.classList.add('revealed'); } });
+}, { threshold: 0.15 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// ─── CLOUDFLARE KV SIMULATION ───
+const CF_KV = {
+  get(key) { return Promise.resolve(localStorage.getItem('cf_kv_'+key)); },
+  put(key, val) { localStorage.setItem('cf_kv_'+key, val); return Promise.resolve(); },
+  delete(key) { localStorage.removeItem('cf_kv_'+key); return Promise.resolve(); }
+};
+// Usage: await CF_KV.put('user:123', JSON.stringify(user));
+
+// ─── INIT ───
+renderQueue();
+renderEQ();
+renderChatMessages();
+renderListeners();
+renderSoulmates();
+renderChips('genreChips', GENRES, selectedGenres);
+renderChips('instrumentChips', INSTRUMENTS, selectedInstruments);
+renderChips('triggerChips', TRIGGERS, selectedTriggers);
+renderTrackList();
+if (currentUser) updateProfileTab();
+</script>
+</body>
+</html>
