@@ -3,11 +3,13 @@
  * Endpoints:
  * - POST /api/import/local-json
  * - POST /api/import/spotify
- *
- * Bindings expected:
- * - MUSIC_META (KV namespace)
- * - MUSIC_BUCKET (R2 bucket, optional but recommended)
+ * - POST /api/jam/create
+ * - POST /api/jam/join
+ * - POST /api/jam/push
+ * - POST /api/jam/pull
  */
+
+const JAM_TTL_SECONDS = 60 * 60 * 24;
 
 export default {
   async fetch(request, env) {
@@ -17,6 +19,18 @@ export default {
     }
     if (request.method === 'POST' && url.pathname === '/api/import/spotify') {
       return handleSpotifyImport(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/jam/create') {
+      return handleJamCreate(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/jam/join') {
+      return handleJamJoin(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/jam/push') {
+      return handleJamPush(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/jam/pull') {
+      return handleJamPull(request, env);
     }
     return json({ ok: false, error: 'Not found' }, 404);
   }
@@ -71,7 +85,6 @@ async function handleSpotifyImport(request, env) {
   };
   await env.MUSIC_META?.put(`playlist:${playlistId}`, JSON.stringify(playlistMeta));
 
-  // If your private backend has Spotify API credentials, enrich this with real track previews.
   return json({
     ok: true,
     playlist: playlistMeta,
@@ -85,6 +98,129 @@ async function handleSpotifyImport(request, env) {
       }
     ]
   });
+}
+
+async function handleJamCreate(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const hostName = sanitizeName(body?.hostName || 'Host');
+  const code = generateJamCode();
+  const memberId = crypto.randomUUID();
+  const room = {
+    code,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    hostId: memberId,
+    members: [{ id: memberId, name: hostName, ts: Date.now() }],
+    queue: [],
+    playback: { isPlaying: false, currentTime: 0, jamCurrentIndex: 0, trackId: null },
+    chat: [],
+    events: [],
+    seq: 0
+  };
+  await putJamRoom(env, room);
+  return json({ ok: true, code, memberId, room });
+}
+
+async function handleJamJoin(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const code = sanitizeJamCode(body?.code);
+  const name = sanitizeName(body?.name || 'Guest');
+  if (!code) return json({ ok: false, error: 'Invalid room code' }, 400);
+  const room = await getJamRoom(env, code);
+  if (!room) return json({ ok: false, error: 'Room not found' }, 404);
+  const memberId = crypto.randomUUID();
+  room.members = (room.members || []).filter(m => Date.now() - m.ts < 60_000 * 10);
+  room.members.push({ id: memberId, name, ts: Date.now() });
+  room.updatedAt = Date.now();
+  await putJamRoom(env, room);
+  return json({ ok: true, code, memberId, room });
+}
+
+async function handleJamPush(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const code = sanitizeJamCode(body?.code);
+  const memberId = String(body?.memberId || '');
+  const event = body?.event || null;
+  if (!code || !memberId || !event?.type) return json({ ok: false, error: 'Missing fields' }, 400);
+  const room = await getJamRoom(env, code);
+  if (!room) return json({ ok: false, error: 'Room not found' }, 404);
+
+  const now = Date.now();
+  room.members = (room.members || []).map(m => m.id === memberId ? { ...m, ts: now } : m);
+  if (!room.members.some(m => m.id === memberId)) {
+    room.members.push({ id: memberId, name: sanitizeName(event.memberName || 'Guest'), ts: now });
+  }
+
+  room.seq = (room.seq || 0) + 1;
+  const normalizedEvent = {
+    id: room.seq,
+    ts: now,
+    memberId,
+    type: event.type,
+    payload: event.payload || {}
+  };
+  room.events = [...(room.events || []), normalizedEvent].slice(-300);
+
+  if (event.type === 'queue' && Array.isArray(event.payload?.queue)) {
+    room.queue = event.payload.queue.slice(0, 200);
+  }
+  if (event.type === 'playback') {
+    room.playback = { ...(room.playback || {}), ...(event.payload || {}) };
+  }
+  if (event.type === 'chat' && event.payload?.item) {
+    room.chat = [...(room.chat || []), event.payload.item].slice(-100);
+  }
+
+  room.updatedAt = now;
+  await putJamRoom(env, room);
+  return json({ ok: true, seq: room.seq });
+}
+
+async function handleJamPull(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const code = sanitizeJamCode(body?.code);
+  const since = Number(body?.since || 0);
+  if (!code) return json({ ok: false, error: 'Invalid room code' }, 400);
+  const room = await getJamRoom(env, code);
+  if (!room) return json({ ok: false, error: 'Room not found' }, 404);
+  const events = (room.events || []).filter(e => (e.id || 0) > since);
+  return json({
+    ok: true,
+    room: {
+      code: room.code,
+      members: room.members || [],
+      queue: room.queue || [],
+      playback: room.playback || {},
+      chat: room.chat || []
+    },
+    events,
+    latestSeq: room.seq || 0
+  });
+}
+
+async function getJamRoom(env, code) {
+  const raw = await env.MUSIC_META?.get(`jam:${code}`);
+  if (!raw) return null;
+  return JSON.parse(raw);
+}
+
+async function putJamRoom(env, room) {
+  await env.MUSIC_META?.put(`jam:${room.code}`, JSON.stringify(room), { expirationTtl: JAM_TTL_SECONDS });
+}
+
+function sanitizeJamCode(code) {
+  const cleaned = String(code || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').trim();
+  return cleaned || '';
+}
+
+function sanitizeName(name) {
+  return String(name || 'Guest').trim().slice(0, 40) || 'Guest';
+}
+
+function generateJamCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const chunk = () => Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
+  return `JAM-${chunk()}-${chunk()}`;
 }
 
 function decodeDataUrl(dataUrl) {
