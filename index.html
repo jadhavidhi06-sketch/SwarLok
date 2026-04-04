@@ -1159,13 +1159,13 @@
     <div class="import-card" onclick="document.getElementById('file-input').click()">
       <div class="import-icon">📁</div>
       <div class="import-title">Local Files</div>
-      <div class="import-desc">Import single or multiple MP3/MP4 audio files from your device. Supports local playback and backend upload.</div>
-      <div class="import-badge">MP3 · MP4 · MULTI-FILE</div>
+      <div class="import-desc">Import single or multiple audio files from your device. Supports MP3, MP4, WAV, FLAC, OGG, AAC, M4A and more.</div>
+      <div class="import-badge">UNIVERSAL AUDIO · MULTI-FILE</div>
     </div>
     <div class="import-card" onclick="document.getElementById('folder-input').click()">
       <div class="import-icon">🗂️</div>
       <div class="import-title">Music Folder</div>
-      <div class="import-desc">Import full folders recursively (MP3/MP4). Ideal for album collections and offline archives.</div>
+      <div class="import-desc">Import full folders recursively. Files are auto-grouped into folder sections in your library.</div>
       <div class="import-badge">FOLDER · RECURSIVE</div>
     </div>
     <div class="import-card" onclick="connectSpotifyPlaylist()">
@@ -1187,8 +1187,8 @@
       <div class="import-badge">Coming Soon</div>
     </div>
   </div>
-  <input type="file" id="file-input" accept=".mp3,.mp4,audio/mpeg,audio/mp4,video/mp4" multiple onchange="handleFileImport(event)">
-  <input type="file" id="folder-input" accept=".mp3,.mp4,audio/mpeg,audio/mp4,video/mp4" webkitdirectory directory multiple onchange="handleFolderImport(event)" style="display:none">
+  <input type="file" id="file-input" accept="audio/*,.mp3,.mp4,.m4a,.wav,.flac,.aac,.ogg,.opus,.webm" multiple onchange="handleFileImport(event)">
+  <input type="file" id="folder-input" accept="audio/*,.mp3,.mp4,.m4a,.wav,.flac,.aac,.ogg,.opus,.webm" webkitdirectory directory multiple onchange="handleFolderImport(event)" style="display:none">
   <div class="sync-status">
     <span id="backendSyncStatus">Backend Sync: Checking…</span>
     <button class="btn-sm" onclick="syncPendingToBackend()">Retry Sync</button>
@@ -1592,7 +1592,11 @@ function persistTracks() {
 }
 function isSupportedMusicFile(file) {
   const name = (file.name || '').toLowerCase();
-  return name.endsWith('.mp3') || name.endsWith('.mp4') || file.type === 'audio/mpeg' || file.type === 'audio/mp4' || file.type === 'video/mp4';
+  const knownAudioExtensions = ['.mp3', '.mp4', '.m4a', '.wav', '.flac', '.aac', '.ogg', '.oga', '.opus', '.webm', '.wma', '.aiff', '.alac'];
+  const byExtension = knownAudioExtensions.some(ext => name.endsWith(ext));
+  const mime = (file.type || '').toLowerCase();
+  const byMime = mime.startsWith('audio/') || mime === 'video/mp4';
+  return byExtension || byMime;
 }
 function savePendingSync() {
   localStorage.setItem(STORE_KEYS.pendingSync, JSON.stringify(pendingSync));
@@ -1621,7 +1625,7 @@ function handleFolderImport(e) {
 }
 async function importMusicFiles(files, source) {
   const supported = files.filter(isSupportedMusicFile);
-  if (!supported.length) return showToast('⚠️ No MP3/MP4 files found in selection');
+  if (!supported.length) return showToast('⚠️ No supported audio files found in selection');
   const imported = await Promise.all(supported.map(fileToDataTrack));
   localTracks = [...localTracks, ...imported];
   persistTracks();
@@ -1660,13 +1664,17 @@ async function syncPendingToBackend() {
 function fileToDataTrack(file) {
   return new Promise(resolve => {
     const reader = new FileReader();
+    const relativePath = file.webkitRelativePath || '';
+    const folderName = relativePath ? relativePath.split('/')[0] : '';
     reader.onload = () => resolve({
       id: crypto.randomUUID(),
       name: file.name.replace(/\.[^.]+$/, ''),
-      artist: file.webkitRelativePath ? `Folder • ${file.webkitRelativePath.split('/')[0]}` : 'Local File',
+      artist: folderName ? `Folder • ${folderName}` : 'Local File',
       size: formatSize(file.size),
       mime: file.type,
       duration: '--:--',
+      sourceFolder: folderName || 'Ungrouped',
+      relativePath,
       dataUrl: reader.result
     });
     reader.readAsDataURL(file);
@@ -1679,7 +1687,19 @@ function renderTrackList() {
     list.innerHTML = '<div style="font-size:0.8rem;color:var(--text2);margin-top:1.2rem;">No imported songs yet. Import to build your library.</div>';
     return;
   }
-  list.innerHTML = `<div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text3);letter-spacing:0.2em;text-transform:uppercase;margin:1.5rem 0 0.75rem;">My Library (${localTracks.length})</div>` + localTracks.map((t,i) => `<div class="track-list-item" onclick="playLocalTrack(${i})"><div class="tli-art">🎵</div><div class="tli-info"><div class="tli-name">${t.name}</div><div class="tli-artist">${t.artist}</div></div><div class="tli-size">${t.size || '—'}</div></div>`).join('');
+  const groupedByFolder = localTracks.reduce((acc, track, index) => {
+    const folder = track.sourceFolder || 'Ungrouped';
+    if (!acc[folder]) acc[folder] = [];
+    acc[folder].push({ ...track, index });
+    return acc;
+  }, {});
+  const folderSections = Object.entries(groupedByFolder).map(([folder, tracks]) => `
+    <div style="margin:1rem 0 0.2rem;">
+      <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--accent);letter-spacing:0.16em;text-transform:uppercase;margin:0.6rem 0;">📂 ${folder} (${tracks.length})</div>
+      ${tracks.map(t => `<div class="track-list-item" onclick="playLocalTrack(${t.index})"><div class="tli-art">🎵</div><div class="tli-info"><div class="tli-name">${t.name}</div><div class="tli-artist">${t.artist}${t.relativePath ? ` · ${t.relativePath}` : ''}</div></div><div class="tli-size">${t.size || '—'}</div></div>`).join('')}
+    </div>
+  `).join('');
+  list.innerHTML = `<div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text3);letter-spacing:0.2em;text-transform:uppercase;margin:1.5rem 0 0.75rem;">My Library (${localTracks.length})</div>${folderSections}`;
 }
 function playLocalTrack(i) {
   const track = localTracks[i];
