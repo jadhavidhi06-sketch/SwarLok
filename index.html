@@ -1432,12 +1432,14 @@ let isPlaying = false, currentTrack = 0, regCurrentStep = 1;
 let selectedGenres = [], selectedInstruments = [], selectedTriggers = [];
 let toastTimer = null, progressInterval = null;
 const audio = document.getElementById('audioPlayer');
+const trackObjectUrls = new Set();
 
 // ─── INTRO ───
 const WORDS = [{text:'Sangeet'},{text:'Musik'},{text:'Musique'},{text:'Música'},{text:'موسیقی'},{text:'संगीत'},{text:'音楽'},{text:'Musiikki'}];
 let wordIdx = 0;
 function showNextWord() {
   const container = document.getElementById('word-container');
+  if (!container) return;
   container.innerHTML = '';
   if (wordIdx >= WORDS.length) {
     document.getElementById('swarlok-title').style.display = 'block';
@@ -1585,7 +1587,23 @@ function updateEQ(band, val) { document.getElementById(`eq-val-${band}`).textCon
 
 // ─── FILE IMPORT (PERSISTENT) ───
 function persistTracks() {
-  localStorage.setItem(STORE_KEYS.tracks, JSON.stringify(localTracks));
+  const tracksForStorage = localTracks.map(track => ({
+    id: track.id,
+    name: track.name,
+    artist: track.artist,
+    size: track.size,
+    mime: track.mime,
+    duration: track.duration || '--:--',
+    sourceFolder: track.sourceFolder || 'Ungrouped',
+    relativePath: track.relativePath || '',
+    embedUrl: track.embedUrl || ''
+  }));
+  try {
+    localStorage.setItem(STORE_KEYS.tracks, JSON.stringify(tracksForStorage));
+  } catch (err) {
+    console.warn('Track persistence skipped due to storage quota.', err);
+    showToast('⚠️ Browser storage full: tracks will play for this session only.');
+  }
   queueTracks = localTracks.length ? localTracks.map(t => ({...t, icon:'🎵'})) : DEFAULT_TRACKS;
   renderQueue();
   updateTrackDisplay();
@@ -1599,7 +1617,17 @@ function isSupportedMusicFile(file) {
   return byExtension || byMime;
 }
 function savePendingSync() {
-  localStorage.setItem(STORE_KEYS.pendingSync, JSON.stringify(pendingSync));
+  const safePending = pendingSync.map(batch => ({
+    id: batch.id,
+    source: batch.source,
+    createdAt: batch.createdAt,
+    trackCount: Array.isArray(batch.tracks) ? batch.tracks.length : 0
+  }));
+  try {
+    localStorage.setItem(STORE_KEYS.pendingSync, JSON.stringify(safePending));
+  } catch (err) {
+    console.warn('Pending sync persistence skipped due to storage quota.', err);
+  }
 }
 function renderBackendSyncStatus() {
   const el = document.getElementById('backendSyncStatus');
@@ -1634,13 +1662,13 @@ async function importMusicFiles(files, source) {
   analytics.lastEventAt = Date.now();
   saveAnalytics();
   try {
-    await sendTracksToBackend(imported);
+    await sendTracksToBackend(imported.map(({ objectUrl, ...track }) => track));
     showToast(`☁️ Backend saved ${supported.length} ${source === 'folder' ? 'folder' : 'file'} item(s)`);
   } catch (err) {
     console.warn(err);
-    pendingSync.push({ id: crypto.randomUUID(), tracks: imported, source, createdAt: Date.now() });
+    pendingSync.push({ id: crypto.randomUUID(), tracks: imported.map(({ objectUrl, ...track }) => track), source, createdAt: Date.now() });
     savePendingSync();
-    showToast('⚠️ Saved locally. Backend sync queued and will retry.');
+    showToast('⚠️ Saved locally. Backend metadata sync queued and will retry.');
   }
   renderBackendSyncStatus();
   showToast(`✅ Imported ${imported.length} track${imported.length > 1 ? 's' : ''}`);
@@ -1649,6 +1677,7 @@ async function syncPendingToBackend() {
   if (!pendingSync.length) return renderBackendSyncStatus();
   const remaining = [];
   for (const batch of pendingSync) {
+    if (!Array.isArray(batch.tracks) || !batch.tracks.length) continue;
     try {
       await sendTracksToBackend(batch.tracks || []);
     } catch (err) {
@@ -1663,10 +1692,11 @@ async function syncPendingToBackend() {
 }
 function fileToDataTrack(file) {
   return new Promise(resolve => {
-    const reader = new FileReader();
     const relativePath = file.webkitRelativePath || '';
     const folderName = relativePath ? relativePath.split('/')[0] : '';
-    reader.onload = () => resolve({
+    const objectUrl = URL.createObjectURL(file);
+    trackObjectUrls.add(objectUrl);
+    resolve({
       id: crypto.randomUUID(),
       name: file.name.replace(/\.[^.]+$/, ''),
       artist: folderName ? `Folder • ${folderName}` : 'Local File',
@@ -1675,9 +1705,8 @@ function fileToDataTrack(file) {
       duration: '--:--',
       sourceFolder: folderName || 'Ungrouped',
       relativePath,
-      dataUrl: reader.result
+      objectUrl
     });
-    reader.readAsDataURL(file);
   });
 }
 function formatSize(b) { if (b<1024) return `${b}B`; if (b<1024*1024) return `${(b/1024).toFixed(1)}KB`; return `${(b/(1024*1024)).toFixed(1)}MB`; }
@@ -1705,7 +1734,13 @@ function playLocalTrack(i) {
   const track = localTracks[i];
   if (!track) return;
   currentTrack = i;
-  if (track.dataUrl) {
+  if (track.objectUrl) {
+    audio.src = track.objectUrl;
+    audio.play();
+    isPlaying = true;
+    document.getElementById('playBtn').textContent = '⏸';
+    document.getElementById('playerShell').classList.add('playing');
+  } else if (track.dataUrl) {
     audio.src = track.dataUrl;
     audio.play();
     isPlaying = true;
@@ -1714,6 +1749,8 @@ function playLocalTrack(i) {
   } else if (track.embedUrl) {
     window.open(track.embedUrl, '_blank', 'noopener,noreferrer');
     showToast('🎵 Opened Spotify embed in a new tab');
+  } else {
+    showToast('⚠️ Re-import this track file to play it in the browser.');
   }
   document.getElementById('trackName').textContent = track.name;
   document.getElementById('trackArtist').textContent = track.artist;
@@ -1941,6 +1978,7 @@ function renderRealtimeData() {
 setInterval(renderRealtimeData, 1000);
 setInterval(syncPendingToBackend, 12000);
 window.addEventListener('online', syncPendingToBackend);
+window.addEventListener('beforeunload', () => trackObjectUrls.forEach(url => URL.revokeObjectURL(url)));
 
 // ─── SCROLL REVEAL ───
 const observer = new IntersectionObserver(entries => entries.forEach(e => e.isIntersecting && e.target.classList.add('revealed')), { threshold: 0.15 });
