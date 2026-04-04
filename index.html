@@ -714,6 +714,19 @@
     text-transform: uppercase;
   }
   #file-input { display: none; }
+  .sync-status {
+    margin-top: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.78rem;
+    color: var(--text2);
+  }
   .track-list { margin-top: 1.5rem; }
   .track-list-item {
     display: flex; align-items: center; gap: 1rem;
@@ -1176,6 +1189,10 @@
   </div>
   <input type="file" id="file-input" accept=".mp3,.mp4,audio/mpeg,audio/mp4,video/mp4" multiple onchange="handleFileImport(event)">
   <input type="file" id="folder-input" accept=".mp3,.mp4,audio/mpeg,audio/mp4,video/mp4" webkitdirectory directory multiple onchange="handleFolderImport(event)" style="display:none">
+  <div class="sync-status">
+    <span id="backendSyncStatus">Backend Sync: Checking…</span>
+    <button class="btn-sm" onclick="syncPendingToBackend()">Retry Sync</button>
+  </div>
   <div id="track-list" class="track-list"></div>
 </section>
 
@@ -1380,7 +1397,8 @@ const STORE_KEYS = {
   theme: 'swarlok_theme',
   jam: 'swarlok_jam_state',
   chat: 'swarlok_chat_msgs',
-  analytics: 'swarlok_analytics'
+  analytics: 'swarlok_analytics',
+  pendingSync: 'swarlok_pending_sync'
 };
 
 const THEMES = [
@@ -1407,6 +1425,7 @@ let savedTheme = localStorage.getItem(STORE_KEYS.theme) || '';
 let jamState = JSON.parse(localStorage.getItem(STORE_KEYS.jam) || '{"live":false,"startedAt":null,"listeners":0}');
 let chatMessages = JSON.parse(localStorage.getItem(STORE_KEYS.chat) || '[]');
 let analytics = JSON.parse(localStorage.getItem(STORE_KEYS.analytics) || '{"imports":0,"jamSessions":0,"messages":0,"lastEventAt":null}');
+let pendingSync = JSON.parse(localStorage.getItem(STORE_KEYS.pendingSync) || '[]');
 
 let queueTracks = localTracks.length ? localTracks.map(t => ({...t, duration: t.duration || '--:--', icon:'🎵'})) : DEFAULT_TRACKS;
 let isPlaying = false, currentTrack = 0, regCurrentStep = 1;
@@ -1575,10 +1594,22 @@ function isSupportedMusicFile(file) {
   const name = (file.name || '').toLowerCase();
   return name.endsWith('.mp3') || name.endsWith('.mp4') || file.type === 'audio/mpeg' || file.type === 'audio/mp4' || file.type === 'video/mp4';
 }
-async function sendFilesToBackend(files) {
-  const form = new FormData();
-  files.forEach(file => form.append('musicFiles', file, file.webkitRelativePath || file.name));
-  const response = await fetch('/api/import/local', { method: 'POST', body: form });
+function savePendingSync() {
+  localStorage.setItem(STORE_KEYS.pendingSync, JSON.stringify(pendingSync));
+}
+function renderBackendSyncStatus() {
+  const el = document.getElementById('backendSyncStatus');
+  if (!el) return;
+  el.textContent = pendingSync.length
+    ? `Backend Sync: ${pendingSync.length} pending upload batch(es)`
+    : 'Backend Sync: All uploads saved';
+}
+async function sendTracksToBackend(tracks) {
+  const response = await fetch('/api/import/local-json', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tracks })
+  });
   if (!response.ok) throw new Error(`Backend import failed (${response.status})`);
   return response.json().catch(() => ({}));
 }
@@ -1591,13 +1622,6 @@ function handleFolderImport(e) {
 async function importMusicFiles(files, source) {
   const supported = files.filter(isSupportedMusicFile);
   if (!supported.length) return showToast('⚠️ No MP3/MP4 files found in selection');
-  try {
-    await sendFilesToBackend(supported);
-    showToast(`☁️ Backend imported ${supported.length} ${source === 'folder' ? 'folder' : 'file'} item(s)`);
-  } catch (err) {
-    console.warn(err);
-    showToast('⚠️ Backend not reachable. Saved locally for playback.');
-  }
   const imported = await Promise.all(supported.map(fileToDataTrack));
   localTracks = [...localTracks, ...imported];
   persistTracks();
@@ -1605,7 +1629,33 @@ async function importMusicFiles(files, source) {
   analytics.imports += imported.length;
   analytics.lastEventAt = Date.now();
   saveAnalytics();
+  try {
+    await sendTracksToBackend(imported);
+    showToast(`☁️ Backend saved ${supported.length} ${source === 'folder' ? 'folder' : 'file'} item(s)`);
+  } catch (err) {
+    console.warn(err);
+    pendingSync.push({ id: crypto.randomUUID(), tracks: imported, source, createdAt: Date.now() });
+    savePendingSync();
+    showToast('⚠️ Saved locally. Backend sync queued and will retry.');
+  }
+  renderBackendSyncStatus();
   showToast(`✅ Imported ${imported.length} track${imported.length > 1 ? 's' : ''}`);
+}
+async function syncPendingToBackend() {
+  if (!pendingSync.length) return renderBackendSyncStatus();
+  const remaining = [];
+  for (const batch of pendingSync) {
+    try {
+      await sendTracksToBackend(batch.tracks || []);
+    } catch (err) {
+      console.warn('Pending sync failed', err);
+      remaining.push(batch);
+    }
+  }
+  pendingSync = remaining;
+  savePendingSync();
+  renderBackendSyncStatus();
+  if (!remaining.length) showToast('✅ All pending tracks synced to backend');
 }
 function fileToDataTrack(file) {
   return new Promise(resolve => {
@@ -1641,6 +1691,9 @@ function playLocalTrack(i) {
     isPlaying = true;
     document.getElementById('playBtn').textContent = '⏸';
     document.getElementById('playerShell').classList.add('playing');
+  } else if (track.embedUrl) {
+    window.open(track.embedUrl, '_blank', 'noopener,noreferrer');
+    showToast('🎵 Opened Spotify embed in a new tab');
   }
   document.getElementById('trackName').textContent = track.name;
   document.getElementById('trackArtist').textContent = track.artist;
@@ -1669,11 +1722,13 @@ async function connectSpotifyPlaylist() {
       duration: track.duration || '--:--',
       size: 'stream',
       mime: 'audio/mpeg',
-      dataUrl: track.previewUrl || track.streamUrl || ''
+      dataUrl: track.previewUrl || track.streamUrl || '',
+      embedUrl: track.embedUrl || ''
     }));
     localTracks = [...normalized, ...localTracks];
     persistTracks();
     renderTrackList();
+    try { await sendTracksToBackend(normalized); } catch (_) {}
     showToast(`🎧 Imported ${normalized.length} Spotify track${normalized.length > 1 ? 's' : ''}`);
   } catch (err) {
     console.warn(err);
@@ -1864,6 +1919,8 @@ function renderRealtimeData() {
   panel.textContent = `LIVE • Tracks:${localTracks.length} • Jam:${jamState.live ? 'ON' : 'OFF'} • Msg:${analytics.messages} • Last:${last}`;
 }
 setInterval(renderRealtimeData, 1000);
+setInterval(syncPendingToBackend, 12000);
+window.addEventListener('online', syncPendingToBackend);
 
 // ─── SCROLL REVEAL ───
 const observer = new IntersectionObserver(entries => entries.forEach(e => e.isIntersecting && e.target.classList.add('revealed')), { threshold: 0.15 });
@@ -1888,6 +1945,8 @@ updateTrackDisplay();
 updateProfileTab();
 updateNavbarAuth();
 renderRealtimeData();
+renderBackendSyncStatus();
+syncPendingToBackend();
 </script>
 </body>
 </html>
