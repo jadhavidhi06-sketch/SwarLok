@@ -37,12 +37,15 @@ async function handleLocalJsonImport(request, env) {
       duration: track.duration || '--:--',
       size: track.size || '0B',
       mime: track.mime || 'audio/mpeg',
+      sourceFolder: track.sourceFolder || 'Ungrouped',
+      relativePath: track.relativePath || '',
       uploadedAt: new Date().toISOString()
     };
     await env.MUSIC_META?.put(`track:${id}`, JSON.stringify(clean));
     if (track.dataUrl && env.MUSIC_BUCKET) {
       const { bytes, contentType } = decodeDataUrl(track.dataUrl);
-      await env.MUSIC_BUCKET.put(`music/${id}`, bytes, {
+      const folderPrefix = toSafeFolder(clean.sourceFolder || 'Ungrouped');
+      await env.MUSIC_BUCKET.put(`music/${folderPrefix}/${id}`, bytes, {
         httpMetadata: { contentType: contentType || clean.mime }
       });
     }
@@ -99,4 +102,12 @@ function json(data, status = 200) {
     status,
     headers: { 'content-type': 'application/json; charset=utf-8' }
   });
+}
+
+function toSafeFolder(folder) {
+  return String(folder || 'Ungrouped')
+    .trim()
+    .replace(/[^a-z0-9-_ ]/gi, '')
+    .replace(/\s+/g, '_')
+    .slice(0, 64) || 'Ungrouped';
 }
