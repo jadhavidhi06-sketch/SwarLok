@@ -748,6 +748,34 @@
   .tli-name { font-size: 0.88rem; margin-bottom: 2px; }
   .tli-artist { font-size: 0.75rem; color: var(--text2); }
   .tli-size { font-family: var(--font-mono); font-size: 0.7rem; color: var(--text3); }
+  .tli-actions { display:flex; gap:0.4rem; }
+  .tiny-btn {
+    border:1px solid var(--border2);
+    background: transparent;
+    color: var(--text2);
+    border-radius: 6px;
+    padding: 0.2rem 0.45rem;
+    font-size: 0.66rem;
+    cursor: pointer;
+  }
+  .tiny-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .import-toolbar {
+    margin-top: 1rem;
+    display: grid;
+    grid-template-columns: minmax(0,1fr) auto auto;
+    gap: 0.65rem;
+    align-items: center;
+  }
+  .import-toolbar input, .import-toolbar select {
+    width: 100%;
+    padding: 0.55rem 0.7rem;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.78rem;
+    outline: none;
+  }
 
   /* ── JAM ROOM ── */
   .jam-shell {
@@ -1192,6 +1220,14 @@
       <div class="player-right">
         <span style="font-size:1rem;">🔈</span>
         <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.01" value="0.8" oninput="setVolume(this.value)">
+        <button class="ctrl-btn" onclick="toggleMute()" id="muteBtn" title="Mute / Unmute">🔊</button>
+        <select id="speedSelect" onchange="setPlaybackRate(this.value)" style="background:var(--surface);border:1px solid var(--border);color:var(--text2);border-radius:6px;padding:0.25rem;font-size:0.7rem;">
+          <option value="0.75">0.75x</option>
+          <option value="1" selected>1x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
         <button class="ctrl-btn" onclick="showToast('❤️ Added to favourites')" title="Like">♡</button>
         <button class="ctrl-btn" onclick="showToast('📋 Added to queue')" title="Queue">≡</button>
       </div>
@@ -1273,6 +1309,22 @@
     <span id="backendSyncStatus">Backend Sync: Checking…</span>
     <button class="btn-sm" onclick="syncPendingToBackend()">Retry Sync</button>
   </div>
+  <div class="import-toolbar">
+    <input id="librarySearch" placeholder="Search imported tracks..." oninput="renderTrackList()">
+    <select id="libraryFilterSource" onchange="renderTrackList()">
+      <option value="all">All Sources</option>
+      <option value="local">Local Files</option>
+      <option value="folder">Folder Imports</option>
+      <option value="spotify">Spotify</option>
+    </select>
+    <select id="librarySortBy" onchange="renderTrackList()">
+      <option value="name_asc">Name A→Z</option>
+      <option value="name_desc">Name Z→A</option>
+      <option value="size_desc">Largest First</option>
+      <option value="size_asc">Smallest First</option>
+      <option value="source_asc">Source A→Z</option>
+    </select>
+  </div>
   <div id="track-list" class="track-list"></div>
 </section>
 
@@ -1317,6 +1369,15 @@
         </div>
         <div class="jam-imports">
           <div class="jam-import-head">Jam Imports</div>
+          <div class="import-toolbar" style="margin-top:0;margin-bottom:0.7rem;grid-template-columns:minmax(0,1fr) auto;">
+            <input id="jamSearch" placeholder="Filter jam tracks..." oninput="renderJamImportList()">
+            <select id="jamSortBy" onchange="renderJamImportList()">
+              <option value="queue">Queue Order</option>
+              <option value="name_asc">Name A→Z</option>
+              <option value="name_desc">Name Z→A</option>
+              <option value="spotify_first">Spotify First</option>
+            </select>
+          </div>
           <div id="jamImportList"></div>
           <div class="jam-prefs">
             <div class="jam-pref-row">
@@ -1541,10 +1602,12 @@ let jamMembers = {};
 
 let queueTracks = localTracks.length ? localTracks.map(t => ({...t, duration: t.duration || '--:--', icon:'🎵'})) : DEFAULT_TRACKS;
 let isPlaying = false, currentTrack = 0, regCurrentStep = 1;
+let isShuffleOn = false, repeatMode = 'off', isMuted = false, lastVolume = 0.8;
 let selectedGenres = [], selectedInstruments = [], selectedTriggers = [];
 let toastTimer = null, progressInterval = null;
 const audio = document.getElementById('audioPlayer');
 const trackObjectUrls = new Set();
+audio.volume = 0.8;
 
 // ─── INTRO ───
 const WORDS = [{text:'Sangeet'},{text:'Musik'},{text:'Musique'},{text:'Música'},{text:'موسیقی'},{text:'संगीत'},{text:'音楽'},{text:'Musiikki'}];
@@ -1638,6 +1701,7 @@ function renderQueue() {
 function setQueueTrack(index) {
   currentTrack = index;
   updateTrackDisplay();
+  loadTrackIntoAudio(getCurrentQueue()[index]);
 }
 function updateTrackDisplay() {
   const t = getCurrentQueue()[currentTrack] || DEFAULT_TRACKS[0];
@@ -1646,12 +1710,15 @@ function updateTrackDisplay() {
   renderQueue();
 }
 function togglePlay() {
+  const track = getCurrentQueue()[currentTrack];
+  if (!audio.src) loadTrackIntoAudio(track);
   isPlaying = !isPlaying;
   document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
   document.getElementById('jamPlayBtn').textContent = isPlaying ? '⏸' : '▶';
   document.getElementById('playerShell').classList.toggle('playing', isPlaying);
-  if (audio.src) isPlaying ? audio.play() : audio.pause();
-  else if (isPlaying) simulateProgress();
+  if (audio.src) {
+    isPlaying ? audio.play().catch(() => showToast('⚠️ Unable to play this source in browser')) : audio.pause();
+  } else if (isPlaying) simulateProgress();
 }
 function simulateProgress() {
   let fake = 0;
@@ -1674,10 +1741,56 @@ function seekAudio(e) {
   if (audio.src && audio.duration) audio.currentTime = pct * audio.duration;
 }
 function setVolume(v) { audio.volume = Number(v); }
-function nextTrack() { currentTrack = (currentTrack + 1) % getCurrentQueue().length; updateTrackDisplay(); }
-function prevTrack() { currentTrack = (currentTrack - 1 + getCurrentQueue().length) % getCurrentQueue().length; updateTrackDisplay(); }
-function toggleShuffle() { showToast('🔀 Shuffle toggled'); }
-function toggleRepeat() { showToast('🔁 Repeat toggled'); }
+function setPlaybackRate(rate) {
+  audio.playbackRate = Number(rate) || 1;
+}
+function toggleMute() {
+  const slider = document.getElementById('volumeSlider');
+  isMuted = !isMuted;
+  if (isMuted) {
+    lastVolume = Number(slider.value);
+    slider.value = '0';
+    audio.volume = 0;
+  } else {
+    slider.value = String(lastVolume || 0.8);
+    audio.volume = Number(slider.value);
+  }
+  document.getElementById('muteBtn').textContent = isMuted ? '🔇' : '🔊';
+}
+function nextTrack() {
+  const tracks = getCurrentQueue();
+  if (!tracks.length) return;
+  currentTrack = isShuffleOn ? Math.floor(Math.random() * tracks.length) : (currentTrack + 1) % tracks.length;
+  updateTrackDisplay();
+  loadTrackIntoAudio(getCurrentQueue()[currentTrack]);
+  if (isPlaying && audio.src) audio.play().catch(() => {});
+}
+function prevTrack() {
+  const tracks = getCurrentQueue();
+  if (!tracks.length) return;
+  currentTrack = (currentTrack - 1 + tracks.length) % tracks.length;
+  updateTrackDisplay();
+  loadTrackIntoAudio(getCurrentQueue()[currentTrack]);
+  if (isPlaying && audio.src) audio.play().catch(() => {});
+}
+function toggleShuffle() {
+  isShuffleOn = !isShuffleOn;
+  document.getElementById('shuffleBtn').style.color = isShuffleOn ? 'var(--accent)' : 'var(--text2)';
+  showToast(isShuffleOn ? '🔀 Shuffle enabled' : '↕️ Shuffle disabled');
+}
+function toggleRepeat() {
+  repeatMode = repeatMode === 'off' ? 'all' : repeatMode === 'all' ? 'one' : 'off';
+  const labels = { off: '↻', all: '🔁', one: '🔂' };
+  document.getElementById('repeatBtn').textContent = labels[repeatMode];
+  document.getElementById('repeatBtn').style.color = repeatMode === 'off' ? 'var(--text2)' : 'var(--accent)';
+}
+function loadTrackIntoAudio(track) {
+  if (!track || track.name === 'No tracks yet') return false;
+  if (track.objectUrl) audio.src = track.objectUrl;
+  else if (track.dataUrl) audio.src = track.dataUrl;
+  else return false;
+  return true;
+}
 audio.addEventListener('timeupdate', () => {
   if (!audio.duration) return;
   document.getElementById('progressFill').style.width = `${(audio.currentTime / audio.duration) * 100}%`;
@@ -1685,7 +1798,20 @@ audio.addEventListener('timeupdate', () => {
   document.getElementById('duration').textContent = formatTime(Math.floor(audio.duration));
   syncJamProgress();
 });
-audio.addEventListener('ended', jamNextTrack);
+audio.addEventListener('ended', () => {
+  if (repeatMode === 'one') {
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+    return;
+  }
+  if (repeatMode === 'all' || jamQueue.length > 1 || getCurrentQueue().length > 1) {
+    jamNextTrack();
+    return;
+  }
+  isPlaying = false;
+  document.getElementById('playBtn').textContent = '▶';
+  document.getElementById('jamPlayBtn').textContent = '▶';
+});
 
 // ─── EQUALIZER ───
 function renderEQ() {
@@ -1822,25 +1948,84 @@ function fileToDataTrack(file) {
   });
 }
 function formatSize(b) { if (b<1024) return `${b}B`; if (b<1024*1024) return `${(b/1024).toFixed(1)}KB`; return `${(b/(1024*1024)).toFixed(1)}MB`; }
+function parseSizeToBytes(sizeText) {
+  const raw = String(sizeText || '').trim().toUpperCase();
+  const m = raw.match(/^([\d.]+)\s*(B|KB|MB|GB)?$/);
+  if (!m) return 0;
+  const n = Number(m[1]) || 0;
+  const unit = m[2] || 'B';
+  const mult = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3 };
+  return n * (mult[unit] || 1);
+}
+function escapeHtml(value) {
+  return String(value || '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
 function renderTrackList() {
   const list = document.getElementById('track-list');
   if (!localTracks.length) {
     list.innerHTML = '<div style="font-size:0.8rem;color:var(--text2);margin-top:1.2rem;">No imported songs yet. Import to build your library.</div>';
     return;
   }
-  const groupedByFolder = localTracks.reduce((acc, track, index) => {
+  const search = (document.getElementById('librarySearch')?.value || '').toLowerCase();
+  const filterSource = document.getElementById('libraryFilterSource')?.value || 'all';
+  const sortBy = document.getElementById('librarySortBy')?.value || 'name_asc';
+  let filtered = localTracks.map((track, index) => ({ ...track, index })).filter(track => {
+    const hay = `${track.name} ${track.artist} ${track.sourceFolder} ${track.relativePath}`.toLowerCase();
+    if (search && !hay.includes(search)) return false;
+    if (filterSource === 'spotify') return Boolean(track.embedUrl);
+    if (filterSource === 'folder') return Boolean(track.relativePath);
+    if (filterSource === 'local') return !track.embedUrl;
+    return true;
+  });
+  filtered.sort((a, b) => {
+    if (sortBy === 'name_desc') return b.name.localeCompare(a.name);
+    if (sortBy === 'size_desc') return parseSizeToBytes(b.size) - parseSizeToBytes(a.size);
+    if (sortBy === 'size_asc') return parseSizeToBytes(a.size) - parseSizeToBytes(b.size);
+    if (sortBy === 'source_asc') return (a.sourceFolder || '').localeCompare(b.sourceFolder || '');
+    return a.name.localeCompare(b.name);
+  });
+  if (!filtered.length) {
+    list.innerHTML = '<div style="font-size:0.8rem;color:var(--text2);margin-top:1.2rem;">No songs match your filters.</div>';
+    return;
+  }
+  const groupedByFolder = filtered.reduce((acc, track) => {
     const folder = track.sourceFolder || 'Ungrouped';
     if (!acc[folder]) acc[folder] = [];
-    acc[folder].push({ ...track, index });
+    acc[folder].push(track);
     return acc;
   }, {});
   const folderSections = Object.entries(groupedByFolder).map(([folder, tracks]) => `
     <div style="margin:1rem 0 0.2rem;">
       <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--accent);letter-spacing:0.16em;text-transform:uppercase;margin:0.6rem 0;">📂 ${folder} (${tracks.length})</div>
-      ${tracks.map(t => `<div class="track-list-item" onclick="playLocalTrack(${t.index})"><div class="tli-art">🎵</div><div class="tli-info"><div class="tli-name">${t.name}</div><div class="tli-artist">${t.artist}${t.relativePath ? ` · ${t.relativePath}` : ''}</div></div><div class="tli-size">${t.size || '—'}</div></div>`).join('')}
+      ${tracks.map(t => `<div class="track-list-item"><div class="tli-art" onclick="playLocalTrack(${t.index})">🎵</div><div class="tli-info" onclick="playLocalTrack(${t.index})"><div class="tli-name">${escapeHtml(t.name)}</div><div class="tli-artist">${escapeHtml(t.artist)}${t.relativePath ? ` · ${escapeHtml(t.relativePath)}` : ''}</div></div><div class="tli-size">${t.size || '—'}</div><div class="tli-actions"><button class="tiny-btn" onclick="renameTrack('${t.id}')">Rename</button><button class="tiny-btn" onclick="deleteTrack('${t.id}')">Delete</button></div></div>`).join('')}
     </div>
   `).join('');
   list.innerHTML = `<div style="font-family:var(--font-mono);font-size:0.68rem;color:var(--text3);letter-spacing:0.2em;text-transform:uppercase;margin:1.5rem 0 0.75rem;">My Library (${localTracks.length})</div>${folderSections}`;
+}
+function renameTrack(id) {
+  const target = localTracks.find(t => t.id === id);
+  if (!target) return;
+  const next = prompt('Rename track', target.name);
+  if (!next) return;
+  target.name = next.trim().slice(0, 120) || target.name;
+  persistTracks();
+  renderTrackList();
+  syncJamFromImports();
+  showToast('✏️ Track renamed');
+}
+function deleteTrack(id) {
+  const idx = localTracks.findIndex(t => t.id === id);
+  if (idx < 0) return;
+  const [removed] = localTracks.splice(idx, 1);
+  if (removed?.objectUrl) {
+    URL.revokeObjectURL(removed.objectUrl);
+    trackObjectUrls.delete(removed.objectUrl);
+  }
+  currentTrack = Math.max(0, Math.min(currentTrack, localTracks.length - 1));
+  persistTracks();
+  renderTrackList();
+  syncJamFromImports();
+  showToast('🗑️ Track deleted');
 }
 function playLocalTrack(i) {
   const track = localTracks[i];
@@ -1915,8 +2100,15 @@ function renderJamImportList() {
     list.innerHTML = '<div style="font-size:0.76rem;color:var(--text2);">Import files, folders, or a Spotify playlist to populate this jam queue.</div>';
     return;
   }
-  list.innerHTML = jamQueue.slice(0, 12).map((track, i) => `
-    <div class="jam-import-item ${i === jamCurrentIndex ? 'active' : ''}" onclick="playJamTrack(${i})">
+  const search = (document.getElementById('jamSearch')?.value || '').toLowerCase();
+  const sortBy = document.getElementById('jamSortBy')?.value || 'queue';
+  let items = jamQueue.map((track, index) => ({ track, index }))
+    .filter(({ track }) => (`${track.name} ${track.artist} ${track.sourceFolder}`).toLowerCase().includes(search));
+  if (sortBy === 'name_asc') items.sort((a, b) => (a.track.name || '').localeCompare(b.track.name || ''));
+  if (sortBy === 'name_desc') items.sort((a, b) => (b.track.name || '').localeCompare(a.track.name || ''));
+  if (sortBy === 'spotify_first') items.sort((a, b) => (a.track.embedUrl ? 0 : 1) - (b.track.embedUrl ? 0 : 1));
+  list.innerHTML = items.slice(0, 24).map(({ track, index }) => `
+    <div class="jam-import-item ${index === jamCurrentIndex ? 'active' : ''}" onclick="playJamTrack(${index})">
       <div>${track.embedUrl ? '🟢' : '🎵'}</div>
       <div class="jam-import-meta">
         <div class="jam-import-name">${track.name || 'Untitled'}</div>
