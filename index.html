@@ -880,6 +880,53 @@
     color: var(--text2);
   }
   .jam-code { color: var(--accent); letter-spacing: 0.15em; }
+  .jam-imports {
+    margin-top: 1rem;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+  .jam-import-head {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 0.7rem;
+  }
+  .jam-import-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.55rem 0.65rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.25s;
+  }
+  .jam-import-item:hover, .jam-import-item.active {
+    border-color: var(--accent);
+    background: var(--surface2);
+  }
+  .jam-import-meta { flex: 1; min-width: 0; }
+  .jam-import-name { font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .jam-import-sub { font-size: 0.68rem; color: var(--text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .jam-prefs {
+    margin-top: 0.8rem;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.65rem;
+  }
+  .jam-pref-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    align-items: center;
+    margin-bottom: 0.4rem;
+  }
+  .jam-pref-row:last-child { margin-bottom: 0; }
+  .jam-pref-row label { font-size: 0.74rem; color: var(--text2); }
 
   /* ── SOCIAL ── */
   .social-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.25rem; }
@@ -1217,23 +1264,41 @@
     <div class="jam-body">
       <div class="jam-player">
         <div class="jam-art">🎷</div>
-        <div class="jam-track-name">Raag Yaman</div>
-        <div class="jam-track-artist">Pt. Hariprasad Chaurasia · 1974</div>
+        <div class="jam-track-name" id="jamTrackName">Import tracks to start jamming</div>
+        <div class="jam-track-artist" id="jamTrackArtist">Local files, folders, and Spotify playlists show up here</div>
         <div class="listeners" id="listenerAvatars"></div>
         <div class="progress-bar-wrap" style="margin-bottom:1.5rem;">
-          <span style="font-family:var(--font-mono); font-size:0.68rem; color:var(--text3);">12:34</span>
-          <div class="progress-bar">
-            <div class="progress-fill" style="width:38%"></div>
+          <span style="font-family:var(--font-mono); font-size:0.68rem; color:var(--text3);" id="jamCurrentTime">00:00</span>
+          <div class="progress-bar" onclick="seekAudio(event)">
+            <div class="progress-fill" style="width:0%" id="jamProgressFill"></div>
           </div>
-          <span style="font-family:var(--font-mono); font-size:0.68rem; color:var(--text3);">32:17</span>
+          <span style="font-family:var(--font-mono); font-size:0.68rem; color:var(--text3);" id="jamDuration">00:00</span>
         </div>
         <div class="ctrl-btns" style="justify-content:center; margin-bottom:1.5rem;">
-          <button class="ctrl-btn">⏮</button>
-          <button class="play-btn" onclick="showToast('▶ Synced across all listeners')">▶</button>
-          <button class="ctrl-btn">⏭</button>
+          <button class="ctrl-btn" onclick="jamPrevTrack()">⏮</button>
+          <button class="play-btn" id="jamPlayBtn" onclick="jamTogglePlay()">▶</button>
+          <button class="ctrl-btn" onclick="jamNextTrack()">⏭</button>
         </div>
         <div style="text-align:center; font-size:0.75rem; color:var(--text3); font-family:var(--font-mono);">
-          ⚡ WebSocket sync · &lt;50ms latency
+          ⚡ Jam control mirrors the main player for synced listening
+        </div>
+        <div class="jam-imports">
+          <div class="jam-import-head">Jam Imports</div>
+          <div id="jamImportList"></div>
+          <div class="jam-prefs">
+            <div class="jam-pref-row">
+              <label for="prefAutoAdd">Auto-add imported tracks to jam</label>
+              <input id="prefAutoAdd" type="checkbox" checked onchange="toggleJamPref('autoAddImported', this.checked)">
+            </div>
+            <div class="jam-pref-row">
+              <label for="prefAutoPlay">Auto-play first imported track</label>
+              <input id="prefAutoPlay" type="checkbox" onchange="toggleJamPref('autoPlayImported', this.checked)">
+            </div>
+            <div class="jam-pref-row">
+              <label for="prefPreferSpotify">Prefer Spotify playlist first</label>
+              <input id="prefPreferSpotify" type="checkbox" onchange="toggleJamPref('preferSpotifyFirst', this.checked)">
+            </div>
+          </div>
         </div>
       </div>
       <div class="jam-chat" id="jamChat">
@@ -1398,7 +1463,8 @@ const STORE_KEYS = {
   jam: 'swarlok_jam_state',
   chat: 'swarlok_chat_msgs',
   analytics: 'swarlok_analytics',
-  pendingSync: 'swarlok_pending_sync'
+  pendingSync: 'swarlok_pending_sync',
+  jamPrefs: 'swarlok_jam_preferences'
 };
 
 const THEMES = [
@@ -1426,6 +1492,9 @@ let jamState = JSON.parse(localStorage.getItem(STORE_KEYS.jam) || '{"live":false
 let chatMessages = JSON.parse(localStorage.getItem(STORE_KEYS.chat) || '[]');
 let analytics = JSON.parse(localStorage.getItem(STORE_KEYS.analytics) || '{"imports":0,"jamSessions":0,"messages":0,"lastEventAt":null}');
 let pendingSync = JSON.parse(localStorage.getItem(STORE_KEYS.pendingSync) || '[]');
+let jamPrefs = JSON.parse(localStorage.getItem(STORE_KEYS.jamPrefs) || '{"autoAddImported":true,"autoPlayImported":false,"preferSpotifyFirst":false}');
+let jamQueue = [];
+let jamCurrentIndex = 0;
 
 let queueTracks = localTracks.length ? localTracks.map(t => ({...t, duration: t.duration || '--:--', icon:'🎵'})) : DEFAULT_TRACKS;
 let isPlaying = false, currentTrack = 0, regCurrentStep = 1;
@@ -1541,6 +1610,7 @@ function updateTrackDisplay() {
 function togglePlay() {
   isPlaying = !isPlaying;
   document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
+  document.getElementById('jamPlayBtn').textContent = isPlaying ? '⏸' : '▶';
   document.getElementById('playerShell').classList.toggle('playing', isPlaying);
   if (audio.src) isPlaying ? audio.play() : audio.pause();
   else if (isPlaying) simulateProgress();
@@ -1561,7 +1631,8 @@ function simulateProgress() {
 function formatTime(s) { return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`; }
 function seekAudio(e) {
   const pct = e.offsetX / e.currentTarget.offsetWidth;
-  document.getElementById('progressFill').style.width = `${pct * 100}%`;
+  const fillId = e.currentTarget.closest('#jam-section') ? 'jamProgressFill' : 'progressFill';
+  document.getElementById(fillId).style.width = `${pct * 100}%`;
   if (audio.src && audio.duration) audio.currentTime = pct * audio.duration;
 }
 function setVolume(v) { audio.volume = Number(v); }
@@ -1574,7 +1645,9 @@ audio.addEventListener('timeupdate', () => {
   document.getElementById('progressFill').style.width = `${(audio.currentTime / audio.duration) * 100}%`;
   document.getElementById('currentTime').textContent = formatTime(Math.floor(audio.currentTime));
   document.getElementById('duration').textContent = formatTime(Math.floor(audio.duration));
+  syncJamProgress();
 });
+audio.addEventListener('ended', jamNextTrack);
 
 // ─── EQUALIZER ───
 function renderEQ() {
@@ -1671,6 +1744,7 @@ async function importMusicFiles(files, source) {
     showToast('⚠️ Saved locally. Backend metadata sync queued and will retry.');
   }
   renderBackendSyncStatus();
+  syncJamFromImports(jamPrefs.autoPlayImported);
   showToast(`✅ Imported ${imported.length} track${imported.length > 1 ? 's' : ''}`);
 }
 async function syncPendingToBackend() {
@@ -1754,6 +1828,126 @@ function playLocalTrack(i) {
   }
   document.getElementById('trackName').textContent = track.name;
   document.getElementById('trackArtist').textContent = track.artist;
+  updateJamTrackUI(track, i);
+}
+function saveJamPrefs() {
+  localStorage.setItem(STORE_KEYS.jamPrefs, JSON.stringify(jamPrefs));
+}
+function toggleJamPref(key, value) {
+  jamPrefs[key] = value;
+  saveJamPrefs();
+  syncJamFromImports();
+}
+function initJamPreferencesUI() {
+  const autoAdd = document.getElementById('prefAutoAdd');
+  const autoPlay = document.getElementById('prefAutoPlay');
+  const preferSpotify = document.getElementById('prefPreferSpotify');
+  if (autoAdd) autoAdd.checked = Boolean(jamPrefs.autoAddImported);
+  if (autoPlay) autoPlay.checked = Boolean(jamPrefs.autoPlayImported);
+  if (preferSpotify) preferSpotify.checked = Boolean(jamPrefs.preferSpotifyFirst);
+}
+function syncJamFromImports(shouldAutoplay = false) {
+  if (!jamPrefs.autoAddImported) {
+    jamQueue = [];
+    renderJamImportList();
+    updateJamTrackUI();
+    return;
+  }
+  jamQueue = [...localTracks];
+  if (jamPrefs.preferSpotifyFirst) {
+    jamQueue.sort((a, b) => {
+      const aSpotify = a.embedUrl ? 0 : 1;
+      const bSpotify = b.embedUrl ? 0 : 1;
+      return aSpotify - bSpotify;
+    });
+  }
+  if (jamCurrentIndex >= jamQueue.length) jamCurrentIndex = 0;
+  renderJamImportList();
+  if (jamQueue.length) {
+    updateJamTrackUI(jamQueue[jamCurrentIndex], jamCurrentIndex);
+    if (shouldAutoplay && jamPrefs.autoPlayImported) playJamTrack(jamCurrentIndex);
+  } else {
+    updateJamTrackUI();
+  }
+}
+function renderJamImportList() {
+  const list = document.getElementById('jamImportList');
+  if (!list) return;
+  if (!jamQueue.length) {
+    list.innerHTML = '<div style="font-size:0.76rem;color:var(--text2);">Import files, folders, or a Spotify playlist to populate this jam queue.</div>';
+    return;
+  }
+  list.innerHTML = jamQueue.slice(0, 12).map((track, i) => `
+    <div class="jam-import-item ${i === jamCurrentIndex ? 'active' : ''}" onclick="playJamTrack(${i})">
+      <div>${track.embedUrl ? '🟢' : '🎵'}</div>
+      <div class="jam-import-meta">
+        <div class="jam-import-name">${track.name || 'Untitled'}</div>
+        <div class="jam-import-sub">${track.artist || 'Unknown'} · ${track.sourceFolder || (track.embedUrl ? 'Spotify Playlist' : 'Imported')}</div>
+      </div>
+      <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text3);">${track.duration || '--:--'}</div>
+    </div>
+  `).join('');
+}
+function updateJamTrackUI(track = null, idx = jamCurrentIndex) {
+  const jamTrack = track || jamQueue[idx];
+  const nameEl = document.getElementById('jamTrackName');
+  const artistEl = document.getElementById('jamTrackArtist');
+  if (!jamTrack) {
+    nameEl.textContent = 'Import tracks to start jamming';
+    artistEl.textContent = 'Local files, folders, and Spotify playlists show up here';
+    document.getElementById('jamPlayBtn').textContent = '▶';
+    return;
+  }
+  nameEl.textContent = jamTrack.name || 'Untitled';
+  artistEl.textContent = `${jamTrack.artist || 'Unknown'} · ${jamTrack.sourceFolder || (jamTrack.embedUrl ? 'Spotify Playlist' : 'Jam Queue')}`;
+  renderJamImportList();
+}
+function playJamTrack(i) {
+  const track = jamQueue[i];
+  if (!track) return;
+  jamCurrentIndex = i;
+  const localIndex = localTracks.findIndex(t => t.id === track.id);
+  if (localIndex >= 0) {
+    playLocalTrack(localIndex);
+    showToast('🎶 Jam switched to imported track');
+    return;
+  }
+  updateJamTrackUI(track, i);
+  if (track.embedUrl) {
+    window.open(track.embedUrl, '_blank', 'noopener,noreferrer');
+    showToast('🎵 Spotify playlist opened for jam control');
+  }
+}
+function jamTogglePlay() {
+  if (!jamQueue.length) {
+    showToast('⚠️ Import songs first to control your jam.');
+    return;
+  }
+  if (!audio.src && jamQueue[jamCurrentIndex]) {
+    playJamTrack(jamCurrentIndex);
+    return;
+  }
+  togglePlay();
+  document.getElementById('jamPlayBtn').textContent = isPlaying ? '⏸' : '▶';
+}
+function jamPrevTrack() {
+  if (!jamQueue.length) return;
+  jamCurrentIndex = (jamCurrentIndex - 1 + jamQueue.length) % jamQueue.length;
+  playJamTrack(jamCurrentIndex);
+}
+function jamNextTrack() {
+  if (!jamQueue.length) return;
+  jamCurrentIndex = (jamCurrentIndex + 1) % jamQueue.length;
+  playJamTrack(jamCurrentIndex);
+}
+function syncJamProgress() {
+  const progress = document.getElementById('jamProgressFill');
+  const current = document.getElementById('jamCurrentTime');
+  const duration = document.getElementById('jamDuration');
+  if (!progress || !current || !duration) return;
+  progress.style.width = audio.duration ? `${(audio.currentTime / audio.duration) * 100}%` : '0%';
+  current.textContent = formatTime(Math.floor(audio.currentTime || 0));
+  duration.textContent = formatTime(Math.floor(audio.duration || 0));
 }
 async function connectSpotifyPlaylist() {
   const playlistUrl = prompt('Paste Spotify playlist link (https://open.spotify.com/playlist/...)');
@@ -1769,6 +1963,20 @@ async function connectSpotifyPlaylist() {
     const payload = await response.json();
     const spotifyTracks = Array.isArray(payload?.tracks) ? payload.tracks : [];
     if (!spotifyTracks.length) {
+      const playlistFallback = {
+        id: crypto.randomUUID(),
+        name: 'Spotify Playlist',
+        artist: 'Spotify',
+        duration: '--:--',
+        size: 'stream',
+        mime: 'audio/mpeg',
+        embedUrl: payload?.playlist?.embedUrl || '',
+        sourceFolder: 'Spotify Playlist'
+      };
+      localTracks = [playlistFallback, ...localTracks];
+      persistTracks();
+      renderTrackList();
+      syncJamFromImports(jamPrefs.autoPlayImported);
       showToast('✅ Playlist accepted by backend. Tracks will appear when ready.');
       return;
     }
@@ -1780,12 +1988,14 @@ async function connectSpotifyPlaylist() {
       size: 'stream',
       mime: 'audio/mpeg',
       dataUrl: track.previewUrl || track.streamUrl || '',
-      embedUrl: track.embedUrl || ''
+      embedUrl: track.embedUrl || '',
+      sourceFolder: 'Spotify Playlist'
     }));
     localTracks = [...normalized, ...localTracks];
     persistTracks();
     renderTrackList();
     try { await sendTracksToBackend(normalized); } catch (_) {}
+    syncJamFromImports(jamPrefs.autoPlayImported);
     showToast(`🎧 Imported ${normalized.length} Spotify track${normalized.length > 1 ? 's' : ''}`);
   } catch (err) {
     console.warn(err);
@@ -1994,6 +2204,8 @@ renderTrackList();
 renderChatMessages();
 renderListeners();
 renderJamState();
+initJamPreferencesUI();
+syncJamFromImports();
 renderSoulmates();
 renderChips('genreChips', GENRES, 'genres');
 renderChips('instrumentChips', INSTRUMENTS, 'instruments');
