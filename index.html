@@ -1130,7 +1130,7 @@
 <div id="intro">
   <div id="word-container"></div>
   <div id="swarlok-title">SwarLok</div>
-  <div id="intro-subtitle">स्वरलोक · World of Notes · Monde des Sons</div>
+  <div id="intro-subtitle">World of Notes · Mundo de Notas · Monde des Sons · 音の世界 · 사운드의 세계</div>
   <button id="intro-enter" onclick="enterSite()">Enter the World ›</button>
 </div>
 
@@ -1338,7 +1338,7 @@
     <div class="jam-header">
       <div>
         <div class="jam-title">Room: Midnight Ragas 🌙</div>
-        <div style="font-size:0.75rem; color:var(--text2); margin-top:2px; font-family:var(--font-mono);">Room ID: JAM-4829-SWAR</div>
+        <div style="font-size:0.75rem; color:var(--text2); margin-top:2px; font-family:var(--font-mono);">Room ID: <span id="jamCodeHeader">JAM-4829-SWAR</span></div>
       </div>
       <div style="display:flex; gap:1rem; align-items:center;">
         <div class="jam-status"><div class="status-dot"></div> <span id="jamStatusText">Offline · 0 listeners</span></div>
@@ -1563,7 +1563,8 @@ const STORE_KEYS = {
   analytics: 'swarlok_analytics',
   pendingSync: 'swarlok_pending_sync',
   jamPrefs: 'swarlok_jam_preferences',
-  jamCode: 'swarlok_jam_code'
+  jamCode: 'swarlok_jam_code',
+  userProfiles: 'swarlok_user_profiles'
 };
 
 const THEMES = [
@@ -1600,6 +1601,61 @@ localStorage.setItem('swarlok_member_id', jamMemberId);
 const jamChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('swarlok-jam-sync') : null;
 let jamMembers = {};
 
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+function loadUserProfiles() {
+  return JSON.parse(localStorage.getItem(STORE_KEYS.userProfiles) || '{}');
+}
+function saveUserProfiles(profiles) {
+  localStorage.setItem(STORE_KEYS.userProfiles, JSON.stringify(profiles || {}));
+}
+function hashCode(input) {
+  return Array.from(String(input || '')).reduce((acc, ch) => ((acc << 5) - acc + ch.charCodeAt(0)) | 0, 0) >>> 0;
+}
+function generateJamCodeForIdentity(identity, name = 'SWAR') {
+  const cleanName = String(name || 'SWAR').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4) || 'SWAR';
+  const seed = hashCode(identity || crypto.randomUUID());
+  return `JAM-${String(seed % 10000).padStart(4, '0')}-${cleanName}`;
+}
+function upsertUserProfile(user, extras = {}) {
+  if (!user?.email) return null;
+  const emailKey = normalizeEmail(user.email);
+  const profiles = loadUserProfiles();
+  const existing = profiles[emailKey] || {};
+  const merged = {
+    ...existing,
+    ...extras,
+    email: emailKey,
+    name: user.name || existing.name || emailKey.split('@')[0],
+    jamCode: extras.jamCode || existing.jamCode || generateJamCodeForIdentity(emailKey, user.name || existing.name)
+  };
+  profiles[emailKey] = merged;
+  saveUserProfiles(profiles);
+  return merged;
+}
+function hydrateStateForUser(user) {
+  if (!user?.email) return;
+  const profile = upsertUserProfile(user) || {};
+  localTracks = Array.isArray(profile.tracks) ? profile.tracks : [];
+  jamPrefs = profile.jamPrefs || { autoAddImported: true, autoPlayImported: false, preferSpotifyFirst: false };
+  jamState = profile.jamState || { live: false, startedAt: null, listeners: 0 };
+  chatMessages = profile.chatMessages || [];
+  jamCode = sanitizeJamCode(profile.jamCode || jamCode || generateJamCodeForIdentity(user.email, user.name));
+  localStorage.setItem(STORE_KEYS.jamCode, jamCode);
+  persistUserScopedState({ jamCode });
+  localStorage.setItem(STORE_KEYS.jamPrefs, JSON.stringify(jamPrefs));
+  localStorage.setItem(STORE_KEYS.chat, JSON.stringify(chatMessages));
+  persistUserScopedState({ chatMessages });
+  localStorage.setItem(STORE_KEYS.jam, JSON.stringify(jamState));
+  localStorage.setItem(STORE_KEYS.tracks, JSON.stringify(localTracks));
+}
+function persistUserScopedState(partial = {}) {
+  if (!currentUser?.email) return;
+  upsertUserProfile(currentUser, partial);
+}
+
 let queueTracks = localTracks.length ? localTracks.map(t => ({...t, duration: t.duration || '--:--', icon:'🎵'})) : DEFAULT_TRACKS;
 let isPlaying = false, currentTrack = 0, regCurrentStep = 1;
 let isShuffleOn = false, repeatMode = 'off', isMuted = false, lastVolume = 0.8;
@@ -1610,8 +1666,25 @@ const trackObjectUrls = new Set();
 audio.volume = 0.8;
 
 // ─── INTRO ───
-const WORDS = [{text:'Sangeet'},{text:'Musik'},{text:'Musique'},{text:'Música'},{text:'موسیقی'},{text:'संगीत'},{text:'音楽'},{text:'Musiikki'}];
+const WORDS = [
+  { text:'Music' },
+  { text:'Música' },
+  { text:'Musique' },
+  { text:'Musik' },
+  { text:'Musica' },
+  { text:'Μουσική' },
+  { text:'संगीत' },
+  { text:'সংগীত' },
+  { text:'சங்கீதம்' },
+  { text:'音乐' },
+  { text:'音楽' },
+  { text:'음악' },
+  { text:'Musiikki' },
+  { text:'Muzică' },
+  { text:'SwarLok' }
+];
 let wordIdx = 0;
+const WORD_FRAME_MS = 1100;
 function showNextWord() {
   const container = document.getElementById('word-container');
   if (!container) return;
@@ -1626,7 +1699,7 @@ function showNextWord() {
   el.className = 'music-word';
   el.textContent = WORDS[wordIdx++].text;
   container.appendChild(el);
-  setTimeout(showNextWord, 1300);
+  setTimeout(showNextWord, WORD_FRAME_MS);
 }
 setTimeout(showNextWord, 400);
 function enterSite() {
@@ -1833,7 +1906,8 @@ function persistTracks() {
     duration: track.duration || '--:--',
     sourceFolder: track.sourceFolder || 'Ungrouped',
     relativePath: track.relativePath || '',
-    embedUrl: track.embedUrl || ''
+    embedUrl: track.embedUrl || '',
+    dataUrl: track.dataUrl || ''
   }));
   try {
     localStorage.setItem(STORE_KEYS.tracks, JSON.stringify(tracksForStorage));
@@ -1841,6 +1915,7 @@ function persistTracks() {
     console.warn('Track persistence skipped due to storage quota.', err);
     showToast('⚠️ Browser storage full: tracks will play for this session only.');
   }
+  persistUserScopedState({ tracks: tracksForStorage });
   queueTracks = localTracks.length ? localTracks.map(t => ({...t, icon:'🎵'})) : DEFAULT_TRACKS;
   renderQueue();
   updateTrackDisplay();
@@ -1932,19 +2007,36 @@ function fileToDataTrack(file) {
   return new Promise(resolve => {
     const relativePath = file.webkitRelativePath || '';
     const folderName = relativePath ? relativePath.split('/')[0] : '';
-    const objectUrl = URL.createObjectURL(file);
-    trackObjectUrls.add(objectUrl);
-    resolve({
-      id: crypto.randomUUID(),
-      name: file.name.replace(/\.[^.]+$/, ''),
-      artist: folderName ? `Folder • ${folderName}` : 'Local File',
-      size: formatSize(file.size),
-      mime: file.type,
-      duration: '--:--',
-      sourceFolder: folderName || 'Ungrouped',
-      relativePath,
-      objectUrl
-    });
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        id: crypto.randomUUID(),
+        name: file.name.replace(/\.[^.]+$/, ''),
+        artist: folderName ? `Folder • ${folderName}` : 'Local File',
+        size: formatSize(file.size),
+        mime: file.type,
+        duration: '--:--',
+        sourceFolder: folderName || 'Ungrouped',
+        relativePath,
+        dataUrl: String(reader.result || '')
+      });
+    };
+    reader.onerror = () => {
+      const objectUrl = URL.createObjectURL(file);
+      trackObjectUrls.add(objectUrl);
+      resolve({
+        id: crypto.randomUUID(),
+        name: file.name.replace(/\.[^.]+$/, ''),
+        artist: folderName ? `Folder • ${folderName}` : 'Local File',
+        size: formatSize(file.size),
+        mime: file.type,
+        duration: '--:--',
+        sourceFolder: folderName || 'Ungrouped',
+        relativePath,
+        objectUrl
+      });
+    };
+    reader.readAsDataURL(file);
   });
 }
 function formatSize(b) { if (b<1024) return `${b}B`; if (b<1024*1024) return `${(b/1024).toFixed(1)}KB`; return `${(b/(1024*1024)).toFixed(1)}MB`; }
@@ -2047,7 +2139,7 @@ function playLocalTrack(i) {
     window.open(track.embedUrl, '_blank', 'noopener,noreferrer');
     showToast('🎵 Opened Spotify embed in a new tab');
   } else {
-    showToast('⚠️ Re-import this track file to play it in the browser.');
+    showToast('⚠️ This track source is unavailable in this browser session.');
   }
   document.getElementById('trackName').textContent = track.name;
   document.getElementById('trackArtist').textContent = track.artist;
@@ -2055,6 +2147,7 @@ function playLocalTrack(i) {
 }
 function saveJamPrefs() {
   localStorage.setItem(STORE_KEYS.jamPrefs, JSON.stringify(jamPrefs));
+  persistUserScopedState({ jamPrefs });
 }
 function toggleJamPref(key, value) {
   jamPrefs[key] = value;
@@ -2124,7 +2217,9 @@ function sanitizeJamCode(code) {
 }
 function renderJamCode() {
   const label = document.getElementById('jamCodeLabel');
+  const header = document.getElementById('jamCodeHeader');
   if (label) label.textContent = jamCode;
+  if (header) header.textContent = jamCode;
 }
 function updateJamTrackUI(track = null, idx = jamCurrentIndex) {
   const jamTrack = track || jamQueue[idx];
@@ -2166,6 +2261,7 @@ function joinJamWithCode(silent = false) {
   const nextCode = sanitizeJamCode(input?.value || new URLSearchParams(location.hash.split('?')[1] || '').get('code') || jamCode);
   jamCode = nextCode;
   localStorage.setItem(STORE_KEYS.jamCode, jamCode);
+  persistUserScopedState({ jamCode });
   renderJamCode();
   if (input) input.value = jamCode;
   if (!silent) showToast(`🎫 Joined room ${jamCode}`);
@@ -2230,6 +2326,7 @@ function wireJamRealtime() {
     if (data.type === 'chat' && data.payload?.item) {
       chatMessages.push(data.payload.item);
       localStorage.setItem(STORE_KEYS.chat, JSON.stringify(chatMessages));
+  persistUserScopedState({ chatMessages });
       renderChatMessages();
     }
     if (data.type === 'track' && Number.isInteger(data.payload?.index) && jamQueue[data.payload.index]) {
@@ -2299,7 +2396,10 @@ async function connectSpotifyPlaylist() {
 function simulateApple() { showToast('🔒 Demo import removed. Connect real integration in backend.'); }
 
 // ─── JAM ROOM PERSISTENCE ───
-function saveJamState() { localStorage.setItem(STORE_KEYS.jam, JSON.stringify(jamState)); }
+function saveJamState() {
+  localStorage.setItem(STORE_KEYS.jam, JSON.stringify(jamState));
+  persistUserScopedState({ jamState });
+}
 function toggleJamSession() {
   jamState.live = !jamState.live;
   jamState.startedAt = jamState.live ? Date.now() : null;
@@ -2331,6 +2431,7 @@ function sendChatMsg() {
   const item = { user: currentUser?.name || 'You', color:'#a855f7', msg };
   chatMessages.push(item);
   localStorage.setItem(STORE_KEYS.chat, JSON.stringify(chatMessages));
+  persistUserScopedState({ chatMessages });
   analytics.messages += 1;
   analytics.lastEventAt = Date.now();
   saveAnalytics();
@@ -2380,7 +2481,13 @@ function doLogin() {
   if (!email || !pass) return showToast('⚠️ Please fill all fields');
   currentUser = { name: email.split('@')[0], email, loginAt: Date.now() };
   localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
-  showToast(`🎵 Welcome back, ${currentUser.name}!`);
+  hydrateStateForUser(currentUser);
+  syncJamFromImports();
+  renderTrackList();
+  renderChatMessages();
+  renderJamCode();
+  initJamPreferencesUI();
+  showToast(`🎵 Welcome back, ${currentUser.name}! Your jam code: ${jamCode}`);
   updateProfileTab();
 }
 function regStep(step) {
@@ -2412,7 +2519,10 @@ function completeRegistration() {
   if (!email) return showToast('⚠️ Email required');
   currentUser = { name, email, genres: selectedGenres, instruments: selectedInstruments, triggers: selectedTriggers, joined: Date.now() };
   localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
-  showToast(`🎉 Welcome to SwarLok, ${name}!`);
+  hydrateStateForUser(currentUser);
+  syncJamFromImports();
+  renderJamCode();
+  showToast(`🎉 Welcome to SwarLok, ${name}! Your jam code: ${jamCode}`);
   updateProfileTab();
   regStep(1);
 }
@@ -2440,7 +2550,7 @@ function signOut() {
   localStorage.removeItem(STORE_KEYS.user);
   currentUser = null;
   updateProfileTab();
-  showToast('👋 Signed out');
+  showToast('👋 Signed out. Your imports and jam code are safely saved to your account profile.');
 }
 
 // ─── MODAL ───
@@ -2460,9 +2570,15 @@ function modalLogin() {
   if (!email) return showToast('⚠️ Please fill in your email');
   currentUser = { name: email.split('@')[0], email, loginAt: Date.now() };
   localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
+  hydrateStateForUser(currentUser);
+  syncJamFromImports();
+  renderTrackList();
+  renderChatMessages();
+  renderJamCode();
+  initJamPreferencesUI();
   closeModal();
   updateProfileTab();
-  showToast(`🎵 Welcome back, ${currentUser.name}!`);
+  showToast(`🎵 Welcome back, ${currentUser.name}! Your jam code: ${jamCode}`);
 }
 function modalRegister() {
   const name = document.getElementById('mRegName')?.value?.trim() || 'SoundSeeker';
@@ -2470,9 +2586,12 @@ function modalRegister() {
   if (!email) return showToast('⚠️ Email required');
   currentUser = { name, email, joined: Date.now() };
   localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
+  hydrateStateForUser(currentUser);
+  syncJamFromImports();
+  renderJamCode();
   closeModal();
   updateProfileTab();
-  showToast(`🎉 Welcome to SwarLok, ${name}!`);
+  showToast(`🎉 Welcome to SwarLok, ${name}! Your jam code: ${jamCode}`);
 }
 
 // ─── TOAST + REAL-TIME ───
@@ -2507,6 +2626,7 @@ document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 // ─── INIT ───
 renderThemeMenu();
 setVibe(savedTheme);
+if (currentUser) hydrateStateForUser(currentUser);
 renderQueue();
 renderEQ();
 renderTrackList();
