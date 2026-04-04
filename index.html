@@ -1337,8 +1337,8 @@
   <div class="jam-shell reveal">
     <div class="jam-header">
       <div>
-        <div class="jam-title">Room: Midnight Ragas 🌙</div>
-        <div style="font-size:0.75rem; color:var(--text2); margin-top:2px; font-family:var(--font-mono);">Room ID: JAM-4829-SWAR</div>
+        <div class="jam-title">Room: <span id="jamRoomTitle">Personal Jam</span> 🌙</div>
+        <div style="font-size:0.75rem; color:var(--text2); margin-top:2px; font-family:var(--font-mono);">Room ID: <span id="jamRoomCodeTop">Not created</span></div>
       </div>
       <div style="display:flex; gap:1rem; align-items:center;">
         <div class="jam-status"><div class="status-dot"></div> <span id="jamStatusText">Offline · 0 listeners</span></div>
@@ -1403,7 +1403,7 @@
           <button class="chat-send" onclick="sendChatMsg()">→</button>
         </div>
         <div class="jam-join-box">
-          <input id="jamJoinCodeInput" placeholder="Enter jam code from another account">
+          <input id="jamJoinCodeInput" placeholder="Enter other user jam code">
           <button class="btn-sm" onclick="joinJamWithCode()">Join Code</button>
         </div>
       </div>
@@ -1563,7 +1563,8 @@ const STORE_KEYS = {
   analytics: 'swarlok_analytics',
   pendingSync: 'swarlok_pending_sync',
   jamPrefs: 'swarlok_jam_preferences',
-  jamCode: 'swarlok_jam_code'
+  jamCode: 'swarlok_jam_code',
+  jamSaved: 'swarlok_saved_from_jam'
 };
 
 const THEMES = [
@@ -1592,13 +1593,16 @@ let chatMessages = JSON.parse(localStorage.getItem(STORE_KEYS.chat) || '[]');
 let analytics = JSON.parse(localStorage.getItem(STORE_KEYS.analytics) || '{"imports":0,"jamSessions":0,"messages":0,"lastEventAt":null}');
 let pendingSync = JSON.parse(localStorage.getItem(STORE_KEYS.pendingSync) || '[]');
 let jamPrefs = JSON.parse(localStorage.getItem(STORE_KEYS.jamPrefs) || '{"autoAddImported":true,"autoPlayImported":false,"preferSpotifyFirst":false}');
-let jamCode = (localStorage.getItem(STORE_KEYS.jamCode) || 'JAM-4829-SWAR').toUpperCase();
+let jamCode = (localStorage.getItem(STORE_KEYS.jamCode) || '').toUpperCase();
 let jamQueue = [];
 let jamCurrentIndex = 0;
-const jamMemberId = localStorage.getItem('swarlok_member_id') || crypto.randomUUID();
-localStorage.setItem('swarlok_member_id', jamMemberId);
+let jamMemberId = localStorage.getItem('swarlok_member_id') || '';
+let jamLastSeq = 0;
+let jamPollTimer = null;
+let jamSyncEnabled = false;
 const jamChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('swarlok-jam-sync') : null;
 let jamMembers = {};
+let jamSavedTracks = JSON.parse(localStorage.getItem(STORE_KEYS.jamSaved) || '[]');
 
 let queueTracks = localTracks.length ? localTracks.map(t => ({...t, duration: t.duration || '--:--', icon:'🎵'})) : DEFAULT_TRACKS;
 let isPlaying = false, currentTrack = 0, regCurrentStep = 1;
@@ -1934,7 +1938,22 @@ function fileToDataTrack(file) {
     const folderName = relativePath ? relativePath.split('/')[0] : '';
     const objectUrl = URL.createObjectURL(file);
     trackObjectUrls.add(objectUrl);
-    resolve({
+    const reader = new FileReader();
+    reader.onload = () => {
+      resolve({
+        id: crypto.randomUUID(),
+        name: file.name.replace(/\.[^.]+$/, ''),
+        artist: folderName ? `Folder • ${folderName}` : 'Local File',
+        size: formatSize(file.size),
+        mime: file.type,
+        duration: '--:--',
+        sourceFolder: folderName || 'Ungrouped',
+        relativePath,
+        objectUrl,
+        dataUrl: typeof reader.result === 'string' ? reader.result : ''
+      });
+    };
+    reader.onerror = () => resolve({
       id: crypto.randomUUID(),
       name: file.name.replace(/\.[^.]+$/, ''),
       artist: folderName ? `Folder • ${folderName}` : 'Local File',
@@ -1943,8 +1962,10 @@ function fileToDataTrack(file) {
       duration: '--:--',
       sourceFolder: folderName || 'Ungrouped',
       relativePath,
-      objectUrl
+      objectUrl,
+      dataUrl: ''
     });
+    reader.readAsDataURL(file);
   });
 }
 function formatSize(b) { if (b<1024) return `${b}B`; if (b<1024*1024) return `${(b/1024).toFixed(1)}KB`; return `${(b/(1024*1024)).toFixed(1)}MB`; }
@@ -2089,6 +2110,7 @@ function syncJamFromImports(shouldAutoplay = false) {
   if (jamQueue.length) {
     updateJamTrackUI(jamQueue[jamCurrentIndex], jamCurrentIndex);
     if (shouldAutoplay && jamPrefs.autoPlayImported) playJamTrack(jamCurrentIndex);
+    pushJamEvent('queue', { queue: jamQueue });
   } else {
     updateJamTrackUI();
   }
@@ -2114,17 +2136,117 @@ function renderJamImportList() {
         <div class="jam-import-name">${track.name || 'Untitled'}</div>
         <div class="jam-import-sub">${track.artist || 'Unknown'} · ${track.sourceFolder || (track.embedUrl ? 'Spotify Playlist' : 'Imported')}</div>
       </div>
-      <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text3);">${track.duration || '--:--'}</div>
+      <div style="display:flex;align-items:center;gap:0.35rem;">
+        <button class="tiny-btn" onclick="event.stopPropagation(); saveTrackFromJam('${track.id || index}')">Save</button>
+        <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text3);">${track.duration || '--:--'}</div>
+      </div>
     </div>
   `).join('');
 }
+
+function saveTrackFromJam(trackId) {
+  const track = jamQueue.find(t => String(t.id) === String(trackId));
+  if (!track) return;
+  if (localTracks.some(t => t.id === track.id)) {
+    showToast('✅ Track already in your library');
+    return;
+  }
+  const savedTrack = {
+    ...track,
+    id: crypto.randomUUID(),
+    sourceFolder: `Saved from ${jamCode}`
+  };
+  localTracks = [savedTrack, ...localTracks];
+  jamSavedTracks = [...jamSavedTracks, { id: savedTrack.id, fromCode: jamCode, at: Date.now() }].slice(-500);
+  localStorage.setItem(STORE_KEYS.jamSaved, JSON.stringify(jamSavedTracks));
+  persistTracks();
+  renderTrackList();
+  syncJamFromImports();
+  showToast('💾 Saved track from jam to your library');
+}
+
+async function createJamRoom() {
+  const hostName = currentUser?.name || 'Guest';
+  const res = await fetch('/api/jam/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hostName })
+  });
+  if (!res.ok) throw new Error('Could not create jam room');
+  const data = await res.json();
+  jamCode = sanitizeJamCode(data.code);
+  jamMemberId = data.memberId || jamMemberId || crypto.randomUUID();
+  localStorage.setItem('swarlok_member_id', jamMemberId);
+  localStorage.setItem(STORE_KEYS.jamCode, jamCode);
+  jamSyncEnabled = true;
+  jamLastSeq = 0;
+  renderJamCode();
+  showToast(`🎉 Created jam code ${jamCode}`);
+}
+
+async function pushJamEvent(type, payload = {}) {
+  if (!jamSyncEnabled || !jamCode || !jamMemberId) return;
+  try {
+    await fetch('/api/jam/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: jamCode, memberId: jamMemberId, event: { type, payload, memberName: currentUser?.name || 'Guest' } })
+    });
+  } catch (_) {}
+}
+
+async function pollJamRoom() {
+  if (!jamSyncEnabled || !jamCode) return;
+  try {
+    const res = await fetch('/api/jam/pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: jamCode, since: jamLastSeq })
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    jamLastSeq = Number(data.latestSeq || jamLastSeq || 0);
+    if (Array.isArray(data.room?.members)) {
+      jamMembers = Object.fromEntries(data.room.members.map(m => [m.id, m]));
+      refreshJamMembers();
+    }
+    if (Array.isArray(data.room?.queue) && data.room.queue.length) {
+      jamQueue = data.room.queue;
+      renderJamImportList();
+      updateJamTrackUI(jamQueue[jamCurrentIndex], jamCurrentIndex);
+    }
+    if (Array.isArray(data.events)) {
+      data.events.forEach(evt => {
+        if (evt.type === 'chat' && evt.payload?.item) {
+          chatMessages.push(evt.payload.item);
+        }
+        if (evt.type === 'track' && Number.isInteger(evt.payload?.index) && jamQueue[evt.payload.index]) {
+          jamCurrentIndex = evt.payload.index;
+          updateJamTrackUI();
+        }
+        if (evt.type === 'playback' && typeof evt.payload?.isPlaying === 'boolean') {
+          isPlaying = evt.payload.isPlaying;
+          document.getElementById('jamPlayBtn').textContent = isPlaying ? '⏸' : '▶';
+          document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
+        }
+      });
+      localStorage.setItem(STORE_KEYS.chat, JSON.stringify(chatMessages.slice(-200)));
+      renderChatMessages();
+    }
+  } catch (_) {}
+}
+
 function sanitizeJamCode(code) {
   const cleaned = String(code || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').trim();
-  return cleaned || 'JAM-4829-SWAR';
+  return cleaned || '';
 }
 function renderJamCode() {
   const label = document.getElementById('jamCodeLabel');
-  if (label) label.textContent = jamCode;
+  const top = document.getElementById('jamRoomCodeTop');
+  const title = document.getElementById('jamRoomTitle');
+  if (label) label.textContent = jamCode || 'Not joined';
+  if (top) top.textContent = jamCode || 'Not created';
+  if (title) title.textContent = jamCode ? `Live ${jamCode}` : 'Personal Jam';
 }
 function updateJamTrackUI(track = null, idx = jamCurrentIndex) {
   const jamTrack = track || jamQueue[idx];
@@ -2161,15 +2283,38 @@ function refreshJamMembers() {
   renderJamState();
   renderListeners();
 }
-function joinJamWithCode(silent = false) {
+async function joinJamWithCode(silent = false) {
   const input = document.getElementById('jamJoinCodeInput');
   const nextCode = sanitizeJamCode(input?.value || new URLSearchParams(location.hash.split('?')[1] || '').get('code') || jamCode);
-  jamCode = nextCode;
-  localStorage.setItem(STORE_KEYS.jamCode, jamCode);
-  renderJamCode();
-  if (input) input.value = jamCode;
-  if (!silent) showToast(`🎫 Joined room ${jamCode}`);
-  broadcastJamEvent('presence');
+  if (!nextCode) return showToast('⚠️ Please enter a valid jam code');
+  try {
+    const res = await fetch('/api/jam/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: nextCode, name: currentUser?.name || 'Guest' })
+    });
+    if (!res.ok) throw new Error('Join failed');
+    const data = await res.json();
+    jamCode = sanitizeJamCode(data.code);
+    jamMemberId = data.memberId || jamMemberId || crypto.randomUUID();
+    localStorage.setItem('swarlok_member_id', jamMemberId);
+    localStorage.setItem(STORE_KEYS.jamCode, jamCode);
+    jamSyncEnabled = true;
+    jamLastSeq = 0;
+    if (Array.isArray(data.room?.queue)) jamQueue = data.room.queue;
+    if (Array.isArray(data.room?.chat)) {
+      chatMessages = data.room.chat.slice(-100);
+      localStorage.setItem(STORE_KEYS.chat, JSON.stringify(chatMessages));
+      renderChatMessages();
+    }
+    renderJamCode();
+    renderJamImportList();
+    if (input) input.value = jamCode;
+    if (!silent) showToast(`🎫 Joined room ${jamCode}`);
+  } catch (err) {
+    console.warn(err);
+    if (!silent) showToast('⚠️ Could not join that jam code');
+  }
 }
 function playJamTrack(i) {
   const track = jamQueue[i];
@@ -2179,6 +2324,7 @@ function playJamTrack(i) {
   if (localIndex >= 0) {
     playLocalTrack(localIndex);
     broadcastJamEvent('track', { index: i, trackId: track.id });
+    pushJamEvent('track', { index: i, trackId: track.id });
     showToast('🎶 Jam switched to imported track');
     return;
   }
@@ -2200,6 +2346,7 @@ function jamTogglePlay() {
   togglePlay();
   document.getElementById('jamPlayBtn').textContent = isPlaying ? '⏸' : '▶';
   broadcastJamEvent('playback', { isPlaying, currentTime: audio.currentTime || 0, trackId: jamQueue[jamCurrentIndex]?.id });
+  pushJamEvent('playback', { isPlaying, currentTime: audio.currentTime || 0, trackId: jamQueue[jamCurrentIndex]?.id, jamCurrentIndex });
 }
 function jamPrevTrack() {
   if (!jamQueue.length) return;
@@ -2300,11 +2447,18 @@ function simulateApple() { showToast('🔒 Demo import removed. Connect real int
 
 // ─── JAM ROOM PERSISTENCE ───
 function saveJamState() { localStorage.setItem(STORE_KEYS.jam, JSON.stringify(jamState)); }
-function toggleJamSession() {
+async function toggleJamSession() {
+  if (!jamState.live && !jamCode) {
+    try { await createJamRoom(); } catch (err) { console.warn(err); showToast('⚠️ Could not create jam room'); return; }
+  }
   jamState.live = !jamState.live;
   jamState.startedAt = jamState.live ? Date.now() : null;
   jamState.listeners = jamState.live ? Math.max(1, jamState.listeners || 1) : 0;
-  if (jamState.live) analytics.jamSessions += 1;
+  if (jamState.live) {
+    analytics.jamSessions += 1;
+    await pushJamEvent('queue', { queue: jamQueue });
+    await pushJamEvent('presence', { live: true });
+  }
   analytics.lastEventAt = Date.now();
   saveJamState();
   saveAnalytics();
@@ -2336,6 +2490,7 @@ function sendChatMsg() {
   saveAnalytics();
   renderChatMessages();
   broadcastJamEvent('chat', { item });
+  pushJamEvent('chat', { item });
   input.value = '';
 }
 function renderListeners() {
@@ -2348,6 +2503,7 @@ function renderListeners() {
   el.innerHTML = chips.map((m,i) => `<div class="listener-avatar" style="background:${colors[i % colors.length]}">${(m.name || 'U')[0].toUpperCase()}</div>`).join('') + `<span class="listener-count">${count} listening</span>`;
 }
 function copyRoomCode() {
+  if (!jamCode) { showToast('⚠️ Start a jam first to generate your code'); return; }
   navigator.clipboard?.writeText(`${location.href.split('#')[0]}#jam-section?code=${jamCode}`);
   showToast(`🔗 Jam room link copied (${jamCode})`);
 }
@@ -2517,12 +2673,14 @@ renderJamCode();
 initJamPreferencesUI();
 syncJamFromImports();
 wireJamRealtime();
-joinJamWithCode(true);
+if (jamCode) { joinJamWithCode(true); }
 setInterval(() => {
-  jamMembers[jamMemberId] = { id: jamMemberId, name: currentUser?.name || 'You', ts: Date.now() };
+  jamMembers[jamMemberId || 'local'] = { id: jamMemberId || 'local', name: currentUser?.name || 'You', ts: Date.now() };
   broadcastJamEvent('presence');
+  pushJamEvent('presence', { live: jamState.live });
   refreshJamMembers();
 }, 5000);
+jamPollTimer = setInterval(pollJamRoom, 2500);
 renderSoulmates();
 renderChips('genreChips', GENRES, 'genres');
 renderChips('instrumentChips', INSTRUMENTS, 'instruments');
