@@ -103,7 +103,12 @@ async function handleSpotifyImport(request, env) {
 async function handleJamCreate(request, env) {
   const body = await request.json().catch(() => ({}));
   const hostName = sanitizeName(body?.hostName || 'Host');
-  const code = generateJamCode();
+  const requestedCode = sanitizeJamCode(body?.code);
+  const code = requestedCode || generateJamCode();
+  const existing = await getJamRoom(env, code);
+  if (existing) {
+    return json({ ok: false, error: 'Room code already exists' }, 409);
+  }
   const memberId = crypto.randomUUID();
   const room = {
     code,
@@ -125,8 +130,26 @@ async function handleJamJoin(request, env) {
   const body = await request.json().catch(() => ({}));
   const code = sanitizeJamCode(body?.code);
   const name = sanitizeName(body?.name || 'Guest');
+  const createIfMissing = Boolean(body?.createIfMissing);
   if (!code) return json({ ok: false, error: 'Invalid room code' }, 400);
-  const room = await getJamRoom(env, code);
+  let room = await getJamRoom(env, code);
+  if (!room && createIfMissing) {
+    const memberId = crypto.randomUUID();
+    room = {
+      code,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      hostId: memberId,
+      members: [{ id: memberId, name, ts: Date.now() }],
+      queue: [],
+      playback: { isPlaying: false, currentTime: 0, jamCurrentIndex: 0, trackId: null },
+      chat: [],
+      events: [],
+      seq: 0
+    };
+    await putJamRoom(env, room);
+    return json({ ok: true, code, memberId, room, created: true });
+  }
   if (!room) return json({ ok: false, error: 'Room not found' }, 404);
   const memberId = crypto.randomUUID();
   room.members = (room.members || []).filter(m => Date.now() - m.ts < 60_000 * 10);
