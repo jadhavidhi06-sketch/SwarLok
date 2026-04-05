@@ -1,6 +1,8 @@
 /**
  * SwarLok backend (Cloudflare Worker style)
  * Endpoints:
+ * - POST /api/auth/register
+ * - POST /api/auth/login
  * - POST /api/import/local-json
  * - POST /api/import/spotify
  * - POST /api/jam/create
@@ -14,6 +16,12 @@ const JAM_TTL_SECONDS = 60 * 60 * 24;
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (request.method === 'POST' && url.pathname === '/api/auth/register') {
+      return handleAuthRegister(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/auth/login') {
+      return handleAuthLogin(request, env);
+    }
     if (request.method === 'POST' && url.pathname === '/api/import/local-json') {
       return handleLocalJsonImport(request, env);
     }
@@ -35,6 +43,84 @@ export default {
     return json({ ok: false, error: 'Not found' }, 404);
   }
 };
+
+async function handleAuthRegister(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const email = normalizeEmail(body?.email);
+  const name = sanitizeName(body?.name || email.split('@')[0] || 'SoundSeeker');
+  const password = String(body?.password || '');
+
+  if (!isValidEmail(email)) {
+    return json({ ok: false, error: 'Please enter a valid email address' }, 400);
+  }
+  const passwordValidation = validatePassword(password);
+  if (!passwordValidation.ok) {
+    return json({ ok: false, error: passwordValidation.error }, 400);
+  }
+
+  const key = authUserKey(email);
+  const existing = await env.MUSIC_META?.get(key);
+  if (existing) {
+    return json({ ok: false, error: 'Account already exists for this email' }, 409);
+  }
+
+  const passwordSalt = crypto.randomUUID().replace(/-/g, '');
+  const passwordHash = await hashPassword(password, passwordSalt);
+  const now = new Date().toISOString();
+  const userRecord = {
+    email,
+    name,
+    passwordSalt,
+    passwordHash,
+    createdAt: now,
+    updatedAt: now
+  };
+  await env.MUSIC_META?.put(key, JSON.stringify(userRecord));
+
+  return json({
+    ok: true,
+    user: {
+      email,
+      name,
+      createdAt: now
+    }
+  });
+}
+
+async function handleAuthLogin(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const email = normalizeEmail(body?.email);
+  const password = String(body?.password || '');
+
+  if (!isValidEmail(email) || !password) {
+    return json({ ok: false, error: 'Invalid credentials' }, 401);
+  }
+
+  const key = authUserKey(email);
+  const raw = await env.MUSIC_META?.get(key);
+  if (!raw) {
+    return json({ ok: false, error: 'Invalid credentials' }, 401);
+  }
+
+  const userRecord = JSON.parse(raw);
+  const expectedHash = String(userRecord?.passwordHash || '');
+  const salt = String(userRecord?.passwordSalt || '');
+  const providedHash = await hashPassword(password, salt);
+  const isMatch = timingSafeEqual(expectedHash, providedHash);
+  if (!isMatch) {
+    return json({ ok: false, error: 'Invalid credentials' }, 401);
+  }
+
+  return json({
+    ok: true,
+    user: {
+      email: userRecord.email,
+      name: userRecord.name,
+      createdAt: userRecord.createdAt,
+      updatedAt: userRecord.updatedAt
+    }
+  });
+}
 
 async function handleLocalJsonImport(request, env) {
   const body = await request.json().catch(() => ({}));
@@ -301,4 +387,43 @@ function toSafeFolder(folder) {
     .replace(/[^a-z0-9-_ ]/gi, '')
     .replace(/\s+/g, '_')
     .slice(0, 64) || 'Ungrouped';
+}
+
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || ''));
+}
+
+function validatePassword(password) {
+  const value = String(password || '');
+  if (value.length < 8) return { ok: false, error: 'Password must be at least 8 characters' };
+  if (!/[A-Z]/.test(value)) return { ok: false, error: 'Password must include at least one uppercase letter' };
+  if (!/[a-z]/.test(value)) return { ok: false, error: 'Password must include at least one lowercase letter' };
+  if (!/[0-9]/.test(value)) return { ok: false, error: 'Password must include at least one number' };
+  return { ok: true };
+}
+
+function authUserKey(email) {
+  return `auth:user:${normalizeEmail(email)}`;
+}
+
+async function hashPassword(password, salt) {
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`${salt}:${password}`));
+  const bytes = new Uint8Array(digest);
+  return Array.from(bytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function timingSafeEqual(a, b) {
+  const left = String(a || '');
+  const right = String(b || '');
+  if (left.length !== right.length) return false;
+  let result = 0;
+  for (let i = 0; i < left.length; i++) {
+    result |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  }
+  return result === 0;
 }
