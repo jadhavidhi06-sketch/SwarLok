@@ -1662,7 +1662,8 @@ const STORE_KEYS = {
   pendingSync: 'swarlok_pending_sync',
   jamPrefs: 'swarlok_jam_preferences',
   jamCode: 'swarlok_jam_code',
-  userProfiles: 'swarlok_user_profiles'
+  userProfiles: 'swarlok_user_profiles',
+  localAuthUsers: 'swarlok_local_auth_users'
 };
 
 const THEMES = [
@@ -1715,10 +1716,95 @@ let replyingToMessageId = null;
 let localJamMemberId = localStorage.getItem('swarlok_local_jam_member_id') || crypto.randomUUID();
 localStorage.setItem('swarlok_local_jam_member_id', localJamMemberId);
 let jamBackendReachability = 'unknown';
+let authBackendReachability = 'unknown';
 
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
+}
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(email));
+}
+function validateStrongPassword(password) {
+  const value = String(password || '');
+  if (value.length < 8) return { ok: false, error: '⚠️ Password must be at least 8 characters.' };
+  if (!/[A-Z]/.test(value)) return { ok: false, error: '⚠️ Password needs at least one uppercase letter.' };
+  if (!/[a-z]/.test(value)) return { ok: false, error: '⚠️ Password needs at least one lowercase letter.' };
+  if (!/[0-9]/.test(value)) return { ok: false, error: '⚠️ Password needs at least one number.' };
+  return { ok: true };
+}
+function loadLocalAuthUsers() {
+  return JSON.parse(localStorage.getItem(STORE_KEYS.localAuthUsers) || '{}');
+}
+function saveLocalAuthUsers(users) {
+  localStorage.setItem(STORE_KEYS.localAuthUsers, JSON.stringify(users || {}));
+}
+async function authApiRequest(path, payload = {}) {
+  const shouldTryBackend = authBackendReachability !== 'down';
+  if (shouldTryBackend) {
+    try {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        authBackendReachability = 'up';
+        return data;
+      }
+      if ([404, 405, 501].includes(response.status)) {
+        authBackendReachability = 'down';
+      } else {
+        return data;
+      }
+    } catch (_) {
+      authBackendReachability = 'down';
+    }
+  }
+
+  const users = loadLocalAuthUsers();
+  const email = normalizeEmail(payload.email);
+  if (path === '/api/auth/register') {
+    if (users[email]) return { ok: false, error: 'Account already exists for this email' };
+    users[email] = {
+      email,
+      name: payload.name || email.split('@')[0] || 'SoundSeeker',
+      password: String(payload.password || ''),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    saveLocalAuthUsers(users);
+    return { ok: true, user: { email: users[email].email, name: users[email].name, createdAt: users[email].createdAt, localFallback: true } };
+  }
+  if (path === '/api/auth/login') {
+    const user = users[email];
+    if (!user || user.password !== String(payload.password || '')) {
+      return { ok: false, error: 'Invalid credentials' };
+    }
+    return { ok: true, user: { email: user.email, name: user.name, createdAt: user.createdAt, updatedAt: user.updatedAt, localFallback: true } };
+  }
+  return { ok: false, error: 'Auth API unavailable' };
+}
+function finalizeUserSession(user, extras = {}) {
+  currentUser = {
+    name: user?.name || user?.email?.split('@')[0] || 'SoundSeeker',
+    email: normalizeEmail(user?.email),
+    genres: extras.genres || currentUser?.genres || [],
+    instruments: extras.instruments || currentUser?.instruments || [],
+    triggers: extras.triggers || currentUser?.triggers || [],
+    createdAt: user?.createdAt || currentUser?.createdAt,
+    updatedAt: user?.updatedAt || currentUser?.updatedAt,
+    loginAt: Date.now()
+  };
+  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
+  hydrateStateForUser(currentUser);
+  syncJamFromImports();
+  renderTrackList();
+  renderChatMessages();
+  renderJamCode();
+  initJamPreferencesUI();
+  updateProfileTab();
 }
 function loadUserProfiles() {
   return JSON.parse(localStorage.getItem(STORE_KEYS.userProfiles) || '{}');
@@ -2922,20 +3008,19 @@ function renderSoulmates() {
 }
 
 // ─── AUTH ───
-function doLogin() {
-  const email = document.getElementById('loginEmail').value.trim();
-  const pass = document.getElementById('loginPass').value.trim();
-  if (!email || !pass) return showToast('⚠️ Please fill all fields');
-  currentUser = { name: email.split('@')[0], email, loginAt: Date.now() };
-  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
-  hydrateStateForUser(currentUser);
-  syncJamFromImports();
-  renderTrackList();
-  renderChatMessages();
-  renderJamCode();
-  initJamPreferencesUI();
-  showToast(`🎵 Welcome back, ${currentUser.name}! Your jam code: ${jamCode}`);
-  updateProfileTab();
+async function doLogin() {
+  const email = normalizeEmail(document.getElementById('loginEmail').value);
+  const pass = document.getElementById('loginPass').value;
+  if (!isValidEmail(email)) return showToast('⚠️ Please enter a valid email address.');
+  if (!pass) return showToast('⚠️ Password is required.');
+  const result = await authApiRequest('/api/auth/login', { email, password: pass });
+  if (!result?.ok || !result?.user) return showToast(`⚠️ ${result?.error || 'Sign in failed. Please try again.'}`);
+  finalizeUserSession(result.user);
+  if (result.user.localFallback) {
+    showToast(`✅ Signed in (local fallback). Jam code: ${jamCode}`);
+  } else {
+    showToast(`🎵 Welcome back, ${currentUser.name}! Your jam code: ${jamCode}`);
+  }
 }
 function regStep(step) {
   document.getElementById(`reg-step-${regCurrentStep}`).style.display = 'none';
@@ -2960,17 +3045,21 @@ function setupChipEvents() {
     };
   });
 }
-function completeRegistration() {
+async function completeRegistration() {
   const name = document.getElementById('regName').value.trim() || 'SoundSeeker';
-  const email = document.getElementById('regEmail').value.trim();
-  if (!email) return showToast('⚠️ Email required');
-  currentUser = { name, email, genres: selectedGenres, instruments: selectedInstruments, triggers: selectedTriggers, joined: Date.now() };
-  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
-  hydrateStateForUser(currentUser);
-  syncJamFromImports();
-  renderJamCode();
+  const email = normalizeEmail(document.getElementById('regEmail').value);
+  const pass = document.getElementById('regPass').value;
+  if (!isValidEmail(email)) return showToast('⚠️ Please enter a valid email address.');
+  const passCheck = validateStrongPassword(pass);
+  if (!passCheck.ok) return showToast(passCheck.error);
+  const result = await authApiRequest('/api/auth/register', { name, email, password: pass });
+  if (!result?.ok || !result?.user) return showToast(`⚠️ ${result?.error || 'Registration failed. Please try again.'}`);
+  finalizeUserSession(result.user, {
+    genres: selectedGenres,
+    instruments: selectedInstruments,
+    triggers: selectedTriggers
+  });
   showToast(`🎉 Welcome to SwarLok, ${name}! Your jam code: ${jamCode}`);
-  updateProfileTab();
   regStep(1);
 }
 function updateProfileTab() {
@@ -3035,32 +3124,28 @@ function openModal(type) {
   }
 }
 function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
-function modalLogin() {
-  const email = document.getElementById('mLoginEmail')?.value?.trim();
-  if (!email) return showToast('⚠️ Please fill in your email');
-  currentUser = { name: email.split('@')[0], email, loginAt: Date.now() };
-  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
-  hydrateStateForUser(currentUser);
-  syncJamFromImports();
-  renderTrackList();
-  renderChatMessages();
-  renderJamCode();
-  initJamPreferencesUI();
+async function modalLogin() {
+  const email = normalizeEmail(document.getElementById('mLoginEmail')?.value);
+  const pass = document.getElementById('mLoginPass')?.value || '';
+  if (!isValidEmail(email)) return showToast('⚠️ Please enter a valid email address.');
+  if (!pass) return showToast('⚠️ Password is required.');
+  const result = await authApiRequest('/api/auth/login', { email, password: pass });
+  if (!result?.ok || !result?.user) return showToast(`⚠️ ${result?.error || 'Sign in failed. Please try again.'}`);
+  finalizeUserSession(result.user);
   closeModal();
-  updateProfileTab();
   showToast(`🎵 Welcome back, ${currentUser.name}! Your jam code: ${jamCode}`);
 }
-function modalRegister() {
+async function modalRegister() {
   const name = document.getElementById('mRegName')?.value?.trim() || 'SoundSeeker';
-  const email = document.getElementById('mRegEmail')?.value?.trim();
-  if (!email) return showToast('⚠️ Email required');
-  currentUser = { name, email, joined: Date.now() };
-  localStorage.setItem(STORE_KEYS.user, JSON.stringify(currentUser));
-  hydrateStateForUser(currentUser);
-  syncJamFromImports();
-  renderJamCode();
+  const email = normalizeEmail(document.getElementById('mRegEmail')?.value);
+  const pass = document.getElementById('mRegPass')?.value || '';
+  if (!isValidEmail(email)) return showToast('⚠️ Please enter a valid email address.');
+  const passCheck = validateStrongPassword(pass);
+  if (!passCheck.ok) return showToast(passCheck.error);
+  const result = await authApiRequest('/api/auth/register', { name, email, password: pass });
+  if (!result?.ok || !result?.user) return showToast(`⚠️ ${result?.error || 'Registration failed. Please try again.'}`);
+  finalizeUserSession(result.user);
   closeModal();
-  updateProfileTab();
   showToast(`🎉 Welcome to SwarLok, ${name}! Your jam code: ${jamCode}`);
 }
 
