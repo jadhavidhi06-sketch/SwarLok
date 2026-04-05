@@ -853,6 +853,7 @@
   .chat-msg {
     display: flex; gap: 0.6rem; align-items: flex-start;
   }
+  .chat-msg.reply { margin-left: 1.8rem; }
   .chat-avatar {
     width: 26px; height: 26px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
@@ -868,6 +869,58 @@
     max-width: calc(100% - 40px);
   }
   .chat-user { font-size: 0.68rem; color: var(--accent); margin-bottom: 2px; }
+  .chat-body { display: flex; flex-direction: column; gap: 0.22rem; }
+  .chat-reply-meta {
+    font-size: 0.66rem;
+    color: var(--text2);
+    padding: 0.2rem 0.5rem;
+    border-radius: 6px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+  }
+  .chat-actions {
+    margin-top: 0.22rem;
+    display: flex;
+    gap: 0.4rem;
+  }
+  .chat-action-btn {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text2);
+    border-radius: 999px;
+    padding: 0.16rem 0.45rem;
+    font-size: 0.62rem;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: all 0.2s;
+  }
+  .chat-action-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .chat-replying {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.45rem 0.8rem;
+    margin: 0 0.75rem;
+    background: rgba(168,85,247,0.09);
+    border: 1px solid rgba(168,85,247,0.25);
+    border-radius: 8px;
+    font-size: 0.68rem;
+    color: var(--accent);
+  }
+  .chat-replying.show { display: flex; }
+  .chat-reply-cancel {
+    border: 1px solid var(--border2);
+    background: transparent;
+    color: var(--text2);
+    border-radius: 999px;
+    padding: 0.1rem 0.5rem;
+    cursor: pointer;
+    font-size: 0.62rem;
+  }
   .chat-input-wrap {
     padding: 0.75rem;
     border-top: 1px solid var(--border);
@@ -1096,20 +1149,55 @@
   /* ── TOAST ── */
   #toast {
     position: fixed; bottom: 2rem; right: 2rem;
-    background: var(--surface2);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    padding: 1rem 1.5rem;
+    background:
+      radial-gradient(circle at top left, rgba(192,132,252,0.22), transparent 62%),
+      radial-gradient(circle at bottom right, rgba(45,212,191,0.2), transparent 58%),
+      linear-gradient(135deg, rgba(18,16,34,0.95), rgba(10,9,20,0.95));
+    border: 1px solid rgba(192,132,252,0.45);
+    border-radius: 14px;
+    padding: 0.9rem 1rem 0.75rem;
     font-size: 0.85rem;
     z-index: 9000;
     transform: translateY(100px);
     opacity: 0;
     transition: all 0.4s cubic-bezier(0.25,0.46,0.45,0.94);
-    max-width: 320px;
+    max-width: 360px;
     backdrop-filter: blur(20px);
+    box-shadow: 0 18px 45px rgba(0,0,0,0.35), 0 0 0 1px rgba(192,132,252,0.2) inset;
   }
   #toast.show { transform: translateY(0); opacity: 1; }
-  #toast-msg { color: var(--text); }
+  .toast-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+  }
+  #toast-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(192,132,252,0.18);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  #toast-msg { color: var(--text); line-height: 1.45; }
+  .toast-progress {
+    height: 3px;
+    margin-top: 0.65rem;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.12);
+    overflow: hidden;
+  }
+  .toast-progress-bar {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--teal));
+    transform-origin: left;
+    transform: scaleX(1);
+  }
+  #toast.show .toast-progress-bar { animation: toastCountdown 2.8s linear forwards; }
+  @keyframes toastCountdown { to { transform: scaleX(0); } }
 
   /* ── SCROLL animations ── */
   .reveal { opacity: 0; transform: translateY(24px); transition: opacity 0.7s, transform 0.7s; }
@@ -1398,6 +1486,10 @@
       <div class="jam-chat" id="jamChat">
         <div class="chat-messages" id="chatMessages"></div>
         <div class="jam-code-row">Room code: <span class="jam-code" id="jamCodeLabel">JAM-4829-SWAR</span><button class="jam-link-btn" onclick="copyRoomCode()">Copy</button></div>
+        <div class="chat-replying" id="chatReplyingBar">
+          <span id="chatReplyingText">Replying…</span>
+          <button class="chat-reply-cancel" onclick="cancelChatReply()">Cancel</button>
+        </div>
         <div class="chat-input-wrap">
           <input class="chat-input" id="chatInput" placeholder="Send a vibe…" onkeydown="if(event.key==='Enter')sendChatMsg()">
           <button class="chat-send" onclick="sendChatMsg()">→</button>
@@ -1550,7 +1642,13 @@
 </div>
 
 <!-- ── TOAST ── -->
-<div id="toast"><div id="toast-msg"></div></div>
+<div id="toast">
+  <div class="toast-row">
+    <div id="toast-icon">🎵</div>
+    <div id="toast-msg"></div>
+  </div>
+  <div class="toast-progress"><div class="toast-progress-bar"></div></div>
+</div>
 
 <script>
 // ─── PERSISTED STATE ───
@@ -1611,6 +1709,11 @@ let jamBackendMemberId = localStorage.getItem('swarlok_jam_backend_member_id') |
 let jamBackendSeq = Number(localStorage.getItem('swarlok_jam_backend_seq') || 0);
 let jamPollTimer = null;
 let jamPullInFlight = false;
+let jamHostBackendId = localStorage.getItem('swarlok_jam_host_backend_id') || '';
+let isJamHost = false;
+let replyingToMessageId = null;
+let localJamMemberId = localStorage.getItem('swarlok_local_jam_member_id') || crypto.randomUUID();
+localStorage.setItem('swarlok_local_jam_member_id', localJamMemberId);
 
 
 function normalizeEmail(email) {
@@ -1665,6 +1768,113 @@ function hydrateStateForUser(user) {
 function persistUserScopedState(partial = {}) {
   if (!currentUser?.email) return;
   upsertUserProfile(currentUser, partial);
+}
+function getLocalJamRooms() {
+  return JSON.parse(localStorage.getItem('swarlok_local_jam_rooms') || '{}');
+}
+function saveLocalJamRooms(rooms) {
+  localStorage.setItem('swarlok_local_jam_rooms', JSON.stringify(rooms || {}));
+}
+function normalizeLocalJamRoom(room, code, hostName = 'Host') {
+  if (room) return room;
+  const now = Date.now();
+  return {
+    code,
+    createdAt: now,
+    updatedAt: now,
+    hostId: localJamMemberId,
+    members: [{ id: localJamMemberId, name: hostName, ts: now }],
+    queue: [],
+    playback: { isPlaying: false, currentTime: 0, jamCurrentIndex: 0, trackId: null },
+    chat: [],
+    events: [],
+    seq: 0
+  };
+}
+async function jamApiRequest(path, payload = {}) {
+  try {
+    const response = await fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (response.ok) return response.json();
+    if (![404, 405, 501].includes(response.status)) return null;
+  } catch (_) {}
+
+  const rooms = getLocalJamRooms();
+  if (path === '/api/jam/join') {
+    const code = sanitizeJamCode(payload.code);
+    if (!code) return { ok: false, error: 'Invalid room code' };
+    const existed = Boolean(rooms[code]);
+    const now = Date.now();
+    const room = normalizeLocalJamRoom(rooms[code], code, payload.name || 'Host');
+    room.members = (room.members || []).filter(m => now - Number(m.ts || 0) < 60_000 * 10);
+    const existing = room.members.find(m => m.id === localJamMemberId);
+    if (existing) {
+      existing.name = payload.name || existing.name;
+      existing.ts = now;
+    } else {
+      room.members.push({ id: localJamMemberId, name: payload.name || 'Guest', ts: now });
+    }
+    room.updatedAt = now;
+    rooms[code] = room;
+    saveLocalJamRooms(rooms);
+    return { ok: true, code, memberId: localJamMemberId, room, created: !existed };
+  }
+  if (path === '/api/jam/push') {
+    const code = sanitizeJamCode(payload.code);
+    const memberId = String(payload.memberId || localJamMemberId);
+    const room = rooms[code];
+    if (!room) return { ok: false, error: 'Room not found' };
+    const now = Date.now();
+    room.seq = Number(room.seq || 0) + 1;
+    room.events = [...(room.events || []), {
+      id: room.seq,
+      ts: now,
+      memberId,
+      type: payload.event?.type,
+      payload: payload.event?.payload || {}
+    }].slice(-300);
+    room.members = (room.members || []).map(m => m.id === memberId ? { ...m, ts: now } : m);
+    if (!room.members.some(m => m.id === memberId)) {
+      room.members.push({ id: memberId, name: payload.event?.memberName || 'Guest', ts: now });
+    }
+    if (payload.event?.type === 'chat' && payload.event?.payload?.item) {
+      room.chat = [...(room.chat || []), payload.event.payload.item].slice(-100);
+    }
+    if (payload.event?.type === 'playback') {
+      room.playback = { ...(room.playback || {}), ...(payload.event.payload || {}) };
+    }
+    room.updatedAt = now;
+    rooms[code] = room;
+    saveLocalJamRooms(rooms);
+    return { ok: true, seq: room.seq };
+  }
+  if (path === '/api/jam/pull') {
+    const code = sanitizeJamCode(payload.code);
+    const since = Number(payload.since || 0);
+    const room = rooms[code];
+    if (!room) return { ok: false, error: 'Room not found' };
+    return {
+      ok: true,
+      room,
+      events: (room.events || []).filter(e => Number(e.id || 0) > since),
+      latestSeq: Number(room.seq || 0)
+    };
+  }
+  return null;
+}
+function canControlJamPlayback() {
+  return isJamHost || !jamHostBackendId;
+}
+function updateJamControlLockUi() {
+  const buttons = [document.getElementById('jamPlayBtn'), ...Array.from(document.querySelectorAll('.ctrl-btn'))];
+  buttons.forEach((btn) => {
+    if (!btn) return;
+    btn.style.opacity = canControlJamPlayback() ? '1' : '0.45';
+    btn.title = canControlJamPlayback() ? 'Host controls' : 'Only the host can control playback';
+  });
 }
 
 let queueTracks = localTracks.length ? localTracks.map(t => ({...t, duration: t.duration || '--:--', icon:'🎵'})) : DEFAULT_TRACKS;
@@ -2311,6 +2521,7 @@ function broadcastJamEvent(type, payload = {}) {
     payload,
     member: {
       id: jamMemberId,
+      backendId: jamBackendMemberId || '',
       name: currentUser?.name || 'Guest',
       ts: Date.now()
     }
@@ -2340,6 +2551,7 @@ function joinJamWithCode(silent = false) {
   broadcastJamEvent('presence');
 }
 function playJamTrack(i) {
+  if (!canControlJamPlayback()) return showToast('🎛️ Only the host can change tracks.');
   const track = jamQueue[i];
   if (!track) return;
   jamCurrentIndex = i;
@@ -2357,6 +2569,7 @@ function playJamTrack(i) {
   }
 }
 function jamTogglePlay() {
+  if (!canControlJamPlayback()) return showToast('🎛️ Only the host can control playback.');
   if (!jamQueue.length) {
     showToast('⚠️ Import songs first to control your jam.');
     return;
@@ -2370,11 +2583,13 @@ function jamTogglePlay() {
   broadcastJamEvent('playback', { isPlaying, currentTime: audio.currentTime || 0, trackId: jamQueue[jamCurrentIndex]?.id, at: Date.now() });
 }
 function jamPrevTrack() {
+  if (!canControlJamPlayback()) return showToast('🎛️ Only the host can control playback.');
   if (!jamQueue.length) return;
   jamCurrentIndex = (jamCurrentIndex - 1 + jamQueue.length) % jamQueue.length;
   playJamTrack(jamCurrentIndex);
 }
 function jamNextTrack() {
+  if (!canControlJamPlayback()) return showToast('🎛️ Only the host can control playback.');
   if (!jamQueue.length) return;
   jamCurrentIndex = (jamCurrentIndex + 1) % jamQueue.length;
   playJamTrack(jamCurrentIndex);
@@ -2391,17 +2606,18 @@ function syncJamProgress() {
 
 async function ensureJamRoomOnBackend() {
   try {
-    const response = await fetch('/api/jam/join', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: jamCode, name: currentUser?.name || 'Guest', createIfMissing: true })
-    });
-    if (!response.ok) return false;
-    const payload = await response.json();
+    const payload = await jamApiRequest('/api/jam/join', { code: jamCode, name: currentUser?.name || 'Guest', createIfMissing: true });
+    if (!payload?.ok) return false;
     if (payload?.memberId) {
       jamBackendMemberId = payload.memberId;
       localStorage.setItem('swarlok_jam_backend_member_id', jamBackendMemberId);
     }
+    if (payload?.room?.hostId) {
+      jamHostBackendId = payload.room.hostId;
+      localStorage.setItem('swarlok_jam_host_backend_id', jamHostBackendId);
+    }
+    isJamHost = Boolean(jamBackendMemberId && jamHostBackendId && jamBackendMemberId === jamHostBackendId);
+    updateJamControlLockUi();
     return true;
   } catch (err) {
     console.warn('Unable to ensure jam room on backend', err);
@@ -2415,18 +2631,14 @@ async function pushJamEventToBackend(type, payload = {}) {
     if (!ready) return;
   }
   try {
-    await fetch('/api/jam/push', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        code: jamCode,
-        memberId: jamBackendMemberId,
-        event: {
-          type,
-          memberName: currentUser?.name || 'Guest',
-          payload
-        }
-      })
+    await jamApiRequest('/api/jam/push', {
+      code: jamCode,
+      memberId: jamBackendMemberId,
+      event: {
+        type,
+        memberName: currentUser?.name || 'Guest',
+        payload
+      }
     });
   } catch (err) {
     console.warn('Unable to push jam event', err);
@@ -2436,17 +2648,18 @@ async function pullJamEventsFromBackend() {
   if (jamPullInFlight || !jamCode) return;
   jamPullInFlight = true;
   try {
-    const response = await fetch('/api/jam/pull', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: jamCode, since: jamBackendSeq || 0 })
-    });
-    if (!response.ok) return;
-    const payload = await response.json();
+    const payload = await jamApiRequest('/api/jam/pull', { code: jamCode, since: jamBackendSeq || 0 });
+    if (!payload?.ok) return;
     const events = Array.isArray(payload?.events) ? payload.events : [];
     if (typeof payload?.latestSeq === 'number') {
       jamBackendSeq = payload.latestSeq;
       localStorage.setItem('swarlok_jam_backend_seq', String(jamBackendSeq));
+    }
+    if (payload?.room?.hostId) {
+      jamHostBackendId = payload.room.hostId;
+      localStorage.setItem('swarlok_jam_host_backend_id', jamHostBackendId);
+      isJamHost = Boolean(jamBackendMemberId && jamHostBackendId && jamBackendMemberId === jamHostBackendId);
+      updateJamControlLockUi();
     }
     for (const ev of events) {
       if (!ev || ev.memberId === jamBackendMemberId) continue;
@@ -2456,11 +2669,11 @@ async function pullJamEventsFromBackend() {
         persistUserScopedState({ chatMessages });
         renderChatMessages();
       }
-      if (ev.type === 'track' && Number.isInteger(ev.payload?.index) && jamQueue[ev.payload.index]) {
+      if (ev.type === 'track' && ev.memberId === jamHostBackendId && Number.isInteger(ev.payload?.index) && jamQueue[ev.payload.index]) {
         jamCurrentIndex = ev.payload.index;
         updateJamTrackUI();
       }
-      if (ev.type === 'playback') {
+      if (ev.type === 'playback' && ev.memberId === jamHostBackendId) {
         const nextPlay = Boolean(ev.payload?.isPlaying);
         const nextTime = Number(ev.payload?.currentTime || 0);
         isPlaying = nextPlay;
@@ -2502,11 +2715,12 @@ function wireJamRealtime() {
   persistUserScopedState({ chatMessages });
       renderChatMessages();
     }
-    if (data.type === 'track' && Number.isInteger(data.payload?.index) && jamQueue[data.payload.index]) {
+    const fromHost = !jamHostBackendId || data.member?.backendId === jamHostBackendId;
+    if (data.type === 'track' && fromHost && Number.isInteger(data.payload?.index) && jamQueue[data.payload.index]) {
       jamCurrentIndex = data.payload.index;
       updateJamTrackUI();
     }
-    if (data.type === 'playback' && typeof data.payload?.isPlaying === 'boolean') {
+    if (data.type === 'playback' && fromHost && typeof data.payload?.isPlaying === 'boolean') {
       isPlaying = data.payload.isPlaying;
       document.getElementById('jamPlayBtn').textContent = isPlaying ? '⏸' : '▶';
       document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
@@ -2594,14 +2808,30 @@ function renderJamState() {
 function renderChatMessages() {
   const el = document.getElementById('chatMessages');
   const msgs = chatMessages.slice(-50);
-  el.innerHTML = msgs.map(m => `<div class="chat-msg"><div class="chat-avatar" style="background:${m.color}">${m.user[0]}</div><div class="chat-bubble"><div class="chat-user">${m.user}</div>${m.msg}</div></div>`).join('') || '<div style="color:var(--text3);font-size:0.78rem;">No chat yet. Start the conversation.</div>';
+  const msgMap = Object.fromEntries(msgs.map(m => [m.id, m]));
+  el.innerHTML = msgs.map(m => {
+    const replyTo = m.parentId ? msgMap[m.parentId] : null;
+    return `<div class="chat-msg ${m.parentId ? 'reply' : ''}">
+      <div class="chat-avatar" style="background:${m.color}">${(m.user || 'U')[0]}</div>
+      <div class="chat-body">
+        <div class="chat-bubble">
+          <div class="chat-user">${escapeHtml(m.user || 'Guest')}</div>
+          ${replyTo ? `<div class="chat-reply-meta">↪ ${escapeHtml(replyTo.user || 'Guest')}: ${escapeHtml((replyTo.msg || '').slice(0, 80))}</div>` : ''}
+          ${escapeHtml(m.msg || '')}
+        </div>
+        <div class="chat-actions">
+          <button class="chat-action-btn" onclick="setReplyTarget('${m.id}')">Reply</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') || '<div style="color:var(--text3);font-size:0.78rem;">No chat yet. Start the conversation.</div>';
   el.scrollTop = el.scrollHeight;
 }
 function sendChatMsg() {
   const input = document.getElementById('chatInput');
   const msg = input.value.trim();
   if (!msg) return;
-  const item = { user: currentUser?.name || 'You', color:'#a855f7', msg };
+  const item = { id: crypto.randomUUID(), user: currentUser?.name || 'You', color:'#a855f7', msg, parentId: replyingToMessageId || null, createdAt: Date.now() };
   chatMessages.push(item);
   localStorage.setItem(STORE_KEYS.chat, JSON.stringify(chatMessages));
   persistUserScopedState({ chatMessages });
@@ -2611,6 +2841,36 @@ function sendChatMsg() {
   renderChatMessages();
   broadcastJamEvent('chat', { item });
   input.value = '';
+  cancelChatReply();
+}
+function setReplyTarget(messageId) {
+  const match = chatMessages.find(m => m.id === messageId);
+  if (!match) return;
+  replyingToMessageId = messageId;
+  const bar = document.getElementById('chatReplyingBar');
+  const text = document.getElementById('chatReplyingText');
+  const input = document.getElementById('chatInput');
+  if (text) text.textContent = `Replying to ${match.user}`;
+  if (bar) bar.classList.add('show');
+  if (input) {
+    input.placeholder = `Reply to ${match.user}...`;
+    input.focus();
+  }
+}
+function cancelChatReply() {
+  replyingToMessageId = null;
+  const bar = document.getElementById('chatReplyingBar');
+  const input = document.getElementById('chatInput');
+  if (bar) bar.classList.remove('show');
+  if (input) input.placeholder = 'Send a vibe…';
+}
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 function renderListeners() {
   const el = document.getElementById('listenerAvatars');
@@ -2720,10 +2980,33 @@ function updateProfileTab() {
   renderSoulmates();
 }
 function signOut() {
-  localStorage.removeItem(STORE_KEYS.user);
-  currentUser = null;
-  updateProfileTab();
-  showToast('👋 Signed out. Your imports and jam code are safely saved to your account profile.');
+  clearImportedLibrary().finally(() => {
+    localStorage.removeItem(STORE_KEYS.user);
+    currentUser = null;
+    updateProfileTab();
+    showToast('👋 Signed out. Imports, folders, and playlist data were cleared from this device.');
+  });
+}
+async function clearImportedLibrary() {
+  for (const track of localTracks) {
+    if (track?.id) {
+      try { await deleteTrackMedia(track.id); } catch (_) {}
+    }
+  }
+  localTracks = [];
+  jamQueue = [];
+  jamCurrentIndex = 0;
+  queueTracks = DEFAULT_TRACKS;
+  localStorage.setItem(STORE_KEYS.tracks, '[]');
+  localStorage.setItem(STORE_KEYS.chat, '[]');
+  chatMessages = [];
+  persistUserScopedState({ tracks: [], chatMessages: [] });
+  renderTrackList();
+  renderQueue();
+  updateTrackDisplay();
+  updateJamTrackUI();
+  renderJamImportList();
+  renderChatMessages();
 }
 
 // ─── MODAL ───
@@ -2770,6 +3053,11 @@ function modalRegister() {
 // ─── TOAST + REAL-TIME ───
 function showToast(msg) {
   const t = document.getElementById('toast');
+  const icon = document.getElementById('toast-icon');
+  const msgType = String(msg || '');
+  if (icon) {
+    icon.textContent = msgType.includes('⚠️') ? '⚠️' : msgType.includes('✅') ? '✅' : msgType.includes('👋') ? '👋' : '🎵';
+  }
   document.getElementById('toast-msg').textContent = msg;
   t.classList.add('show');
   clearTimeout(toastTimer);
@@ -2811,6 +3099,7 @@ async function bootstrapApp() {
   renderJamCode();
   initJamPreferencesUI();
   syncJamFromImports();
+  updateJamControlLockUi();
   wireJamRealtime();
   joinJamWithCode(true);
   startJamPolling();
