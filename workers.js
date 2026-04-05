@@ -19,59 +19,60 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    // 1. Force the Worker to serve index.html for all frontend routes
-    if (url.pathname === "/" || !url.pathname.includes('.')) {
-      try {
-        // We create a new request specifically for index.html
-        const landingPage = new URL("/index.html", request.url);
-        return await env.ASSETS.fetch(new Request(landingPage, request));
-      } catch (e) {
-        return new Response("Frontend Error: Please ensure index.html exists in your GitHub root.", { status: 404 });
-      }
+    // 1. Handle CORS preflight
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        }
+      });
     }
 
-    // 2. Serve other static assets (images, css, etc.) if they have an extension
-    if (url.pathname.includes('.')) {
-      try {
-        return await env.ASSETS.fetch(request);
-      } catch (e) {
-        return new Response("Asset Not Found", { status: 404 });
+    // 2. API routes first
+    if (url.pathname.startsWith("/api/")) {
+      if (request.method === 'POST' && url.pathname === '/api/auth/register') {
+        return handleAuthRegister(request, env);
       }
+      if (request.method === 'POST' && url.pathname === '/api/auth/login') {
+        return handleAuthLogin(request, env);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/import/local-json') {
+        return handleLocalJsonImport(request, env);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/import/spotify') {
+        return handleSpotifyImport(request, env);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/jam/create') {
+        return handleJamCreate(request, env);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/jam/join') {
+        return handleJamJoin(request, env);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/jam/invite/create') {
+        return handleJamInviteCreate(request, env);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/jam/invite/resolve') {
+        return handleJamInviteResolve(request, env);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/jam/push') {
+        return handleJamPush(request, env);
+      }
+      if (request.method === 'POST' && url.pathname === '/api/jam/pull') {
+        return handleJamPull(request, env);
+      }
+      return json({ ok: false, error: 'API route not found' }, 404);
     }
 
-    // 3. Continue to your API logic (auth, jam, etc.)
-    // ...
-    if (request.method === 'POST' && url.pathname === '/api/auth/register') {
-      return handleAuthRegister(request, env);
+    // 3. Static assets
+    if (url.pathname.includes(".")) {
+      return env.ASSETS.fetch(request);
     }
-    if (request.method === 'POST' && url.pathname === '/api/auth/login') {
-      return handleAuthLogin(request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/import/local-json') {
-      return handleLocalJsonImport(request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/import/spotify') {
-      return handleSpotifyImport(request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/jam/create') {
-      return handleJamCreate(request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/jam/join') {
-      return handleJamJoin(request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/jam/invite/create') {
-      return handleJamInviteCreate(request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/jam/invite/resolve') {
-      return handleJamInviteResolve(request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/jam/push') {
-      return handleJamPush(request, env);
-    }
-    if (request.method === 'POST' && url.pathname === '/api/jam/pull') {
-      return handleJamPull(request, env);
-    }
-    return json({ ok: false, error: 'Not found' }, 404);
+
+    // 4. SPA fallback -> index.html
+    const landingPage = new URL("/index.html", request.url);
+    return env.ASSETS.fetch(new Request(landingPage, request));
   }
 };
 
