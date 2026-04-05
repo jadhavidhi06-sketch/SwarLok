@@ -2,9 +2,9 @@ name = "swarlok"
 main = "workers.js"
 compatibility_date = "2024-04-05"
 
+# THIS IS THE MISSING PIECE
 [site]
-bucket = "."
-include = ["index.html", "assets/**/*"] # Explicitly tell it to include your HTML
+bucket = "./"
 
 [[kv_namespaces]]
 binding = "MUSIC_META"
