@@ -1430,7 +1430,7 @@
       </div>
       <div style="display:flex; gap:1rem; align-items:center;">
         <div class="jam-status"><div class="status-dot"></div> <span id="jamStatusText">Offline · 0 listeners</span></div>
-        <button class="btn-sm" onclick="copyRoomCode()">Copy Link</button>
+        <button class="btn-sm" onclick="createJamInviteLink()">Invite Link</button>
         <button class="btn-sm btn-primary" id="jamToggleBtn" onclick="toggleJamSession()">Start Jam</button>
       </div>
     </div>
@@ -1920,6 +1920,36 @@ async function jamApiRequest(path, payload = {}) {
     rooms[code] = room;
     saveLocalJamRooms(rooms);
     return { ok: true, code, memberId: localJamMemberId, room, created: !existed };
+  }
+  if (path === '/api/jam/invite/create') {
+    const code = sanitizeJamCode(payload.code);
+    if (!code || !rooms[code]) return { ok: false, error: 'Room not found' };
+    const token = crypto.randomUUID().replace(/-/g, '');
+    const expiresAt = Date.now() + Math.min(Math.max(Number(payload.expiresInMinutes || 120), 5), 60 * 24 * 7) * 60_000;
+    const invites = JSON.parse(localStorage.getItem('swarlok_local_jam_invites') || '{}');
+    invites[token] = { token, code, expiresAt, createdByName: payload.name || 'Host' };
+    localStorage.setItem('swarlok_local_jam_invites', JSON.stringify(invites));
+    return { ok: true, invite: { token, code, expiresAt } };
+  }
+  if (path === '/api/jam/invite/resolve') {
+    const token = String(payload.token || '').trim();
+    const invites = JSON.parse(localStorage.getItem('swarlok_local_jam_invites') || '{}');
+    const invite = invites[token];
+    if (!invite) return { ok: false, error: 'Invite not found' };
+    if (Date.now() > Number(invite.expiresAt || 0)) {
+      delete invites[token];
+      localStorage.setItem('swarlok_local_jam_invites', JSON.stringify(invites));
+      return { ok: false, error: 'Invite has expired' };
+    }
+    const code = sanitizeJamCode(invite.code);
+    const room = normalizeLocalJamRoom(rooms[code], code, invite.createdByName || 'Host');
+    const now = Date.now();
+    room.members = (room.members || []).filter(m => now - Number(m.ts || 0) < 60_000 * 10);
+    room.members.push({ id: localJamMemberId, name: payload.name || 'Guest', ts: now });
+    room.updatedAt = now;
+    rooms[code] = room;
+    saveLocalJamRooms(rooms);
+    return { ok: true, code, memberId: localJamMemberId, room, invite: { token, createdByName: invite.createdByName, expiresAt: invite.expiresAt } };
   }
   if (path === '/api/jam/push') {
     const code = sanitizeJamCode(payload.code);
@@ -2593,6 +2623,14 @@ function sanitizeJamCode(code) {
   const cleaned = String(code || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').trim();
   return cleaned || 'JAM-4829-SWAR';
 }
+function getJamParamsFromUrl() {
+  const hashPart = location.hash.includes('?') ? location.hash.split('?')[1] : '';
+  const params = new URLSearchParams(`${location.search.slice(1)}&${hashPart}`);
+  return {
+    code: sanitizeJamCode(params.get('code') || ''),
+    invite: String(params.get('invite') || '').trim()
+  };
+}
 function renderJamCode() {
   const label = document.getElementById('jamCodeLabel');
   const header = document.getElementById('jamCodeHeader');
@@ -2637,7 +2675,8 @@ function refreshJamMembers() {
 }
 function joinJamWithCode(silent = false) {
   const input = document.getElementById('jamJoinCodeInput');
-  const nextCode = sanitizeJamCode(input?.value || new URLSearchParams(location.hash.split('?')[1] || '').get('code') || jamCode);
+  const params = getJamParamsFromUrl();
+  const nextCode = sanitizeJamCode(input?.value || params.code || jamCode);
   jamCode = nextCode;
   localStorage.setItem(STORE_KEYS.jamCode, jamCode);
   persistUserScopedState({ jamCode });
@@ -2649,6 +2688,58 @@ function joinJamWithCode(silent = false) {
   if (jamBackendReachability === 'down') jamBackendReachability = 'unknown';
   ensureJamRoomOnBackend().then(() => pullJamEventsFromBackend());
   broadcastJamEvent('presence');
+}
+async function createJamInviteLink() {
+  const fallbackLink = `${location.origin}${location.pathname}#jam-section?code=${jamCode}`;
+  try {
+    const payload = await jamApiRequest('/api/jam/invite/create', {
+      code: jamCode,
+      memberId: jamBackendMemberId,
+      name: currentUser?.name || 'Host',
+      expiresInMinutes: 120
+    });
+    if (!payload?.ok) throw new Error(payload?.error || 'Unable to create invite');
+    const inviteToken = payload?.invite?.token || '';
+    const inviteUrl = inviteToken
+      ? `${location.origin}${location.pathname}?invite=${encodeURIComponent(inviteToken)}#jam-section`
+      : (payload?.invite?.inviteUrl ? `${location.origin}${payload.invite.inviteUrl}` : fallbackLink);
+    await navigator.clipboard?.writeText(inviteUrl);
+    showToast(`🔗 Invite link copied for room ${jamCode}`);
+  } catch (_) {
+    await navigator.clipboard?.writeText(fallbackLink);
+    showToast(`🔗 Room link copied (${jamCode})`);
+  }
+}
+async function consumeJamInviteToken(silent = false) {
+  const params = getJamParamsFromUrl();
+  if (!params.invite) return false;
+  try {
+    const payload = await jamApiRequest('/api/jam/invite/resolve', {
+      token: params.invite,
+      name: currentUser?.name || 'Guest'
+    });
+    if (!payload?.ok || !payload?.code) throw new Error(payload?.error || 'Invalid invite');
+    jamCode = sanitizeJamCode(payload.code);
+    localStorage.setItem(STORE_KEYS.jamCode, jamCode);
+    persistUserScopedState({ jamCode });
+    if (payload?.memberId) {
+      jamBackendMemberId = payload.memberId;
+      localStorage.setItem('swarlok_jam_backend_member_id', jamBackendMemberId);
+    }
+    jamBackendSeq = 0;
+    localStorage.setItem('swarlok_jam_backend_seq', '0');
+    renderJamCode();
+    const joinInput = document.getElementById('jamJoinCodeInput');
+    if (joinInput) joinInput.value = jamCode;
+    history.replaceState({}, '', `${location.pathname}#jam-section?code=${encodeURIComponent(jamCode)}`);
+    if (!silent) showToast(`🎫 Joined ${jamCode} via invite`);
+    ensureJamRoomOnBackend().then(() => pullJamEventsFromBackend());
+    broadcastJamEvent('presence');
+    return true;
+  } catch (_) {
+    if (!silent) showToast('⚠️ Invite is invalid or expired. Join with room code.');
+    return false;
+  }
 }
 function playJamTrack(i) {
   if (!canControlJamPlayback()) return showToast('🎛️ Only the host can change tracks.');
@@ -3200,7 +3291,8 @@ async function bootstrapApp() {
   syncJamFromImports();
   updateJamControlLockUi();
   wireJamRealtime();
-  joinJamWithCode(true);
+  const joinedByInvite = await consumeJamInviteToken(true);
+  if (!joinedByInvite) joinJamWithCode(true);
   startJamPolling();
   setInterval(() => {
     jamMembers[jamMemberId] = { id: jamMemberId, name: currentUser?.name || 'You', ts: Date.now() };
