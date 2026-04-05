@@ -1611,6 +1611,8 @@ let jamBackendMemberId = localStorage.getItem('swarlok_jam_backend_member_id') |
 let jamBackendSeq = Number(localStorage.getItem('swarlok_jam_backend_seq') || 0);
 let jamPollTimer = null;
 let jamPullInFlight = false;
+const MAX_JAM_SHARED_TRACKS = 60;
+const MAX_JAM_SHARED_DATAURL_BYTES = 1_500_000;
 
 
 function normalizeEmail(email) {
@@ -2223,6 +2225,48 @@ function toggleJamPref(key, value) {
   saveJamPrefs();
   syncJamFromImports();
 }
+function sanitizeTrackForJamShare(track = {}) {
+  const dataUrl = typeof track.dataUrl === 'string' ? track.dataUrl : '';
+  const canShareDataUrl = dataUrl && dataUrl.length <= MAX_JAM_SHARED_DATAURL_BYTES;
+  return {
+    id: track.id || crypto.randomUUID(),
+    name: track.name || 'Untitled',
+    artist: track.artist || 'Unknown',
+    duration: track.duration || '--:--',
+    size: track.size || 'stream',
+    mime: track.mime || 'audio/mpeg',
+    sourceFolder: track.sourceFolder || 'Jam Queue',
+    relativePath: track.relativePath || '',
+    embedUrl: track.embedUrl || '',
+    dataUrl: canShareDataUrl ? dataUrl : ''
+  };
+}
+function buildJamQueuePayload() {
+  return {
+    tracks: jamQueue.slice(0, MAX_JAM_SHARED_TRACKS).map(sanitizeTrackForJamShare),
+    jamCurrentIndex,
+    updatedAt: Date.now()
+  };
+}
+function applyRemoteQueueState(payload = {}) {
+  const incomingTracks = Array.isArray(payload?.tracks) ? payload.tracks.map(sanitizeTrackForJamShare) : [];
+  if (!incomingTracks.length) return;
+  jamQueue = incomingTracks;
+  const index = Number(payload?.jamCurrentIndex || 0);
+  jamCurrentIndex = Number.isInteger(index) ? Math.max(0, Math.min(index, jamQueue.length - 1)) : 0;
+  localTracks = [...jamQueue];
+  persistTracks();
+  renderTrackList();
+  updateJamTrackUI(jamQueue[jamCurrentIndex], jamCurrentIndex);
+}
+function ensureTrackLoadedForPlayback(track) {
+  if (!track) return false;
+  if (loadTrackIntoAudio(track)) return true;
+  if (track.embedUrl) {
+    showToast('🎵 Host started a Spotify item. Open the playlist to listen in sync.');
+  }
+  return false;
+}
 function initJamPreferencesUI() {
   const autoAdd = document.getElementById('prefAutoAdd');
   const autoPlay = document.getElementById('prefAutoPlay');
@@ -2236,6 +2280,7 @@ function syncJamFromImports(shouldAutoplay = false) {
     jamQueue = [];
     renderJamImportList();
     updateJamTrackUI();
+    broadcastJamEvent('queue', { tracks: [], jamCurrentIndex: 0, updatedAt: Date.now() });
     return;
   }
   jamQueue = [...localTracks];
@@ -2250,9 +2295,11 @@ function syncJamFromImports(shouldAutoplay = false) {
   renderJamImportList();
   if (jamQueue.length) {
     updateJamTrackUI(jamQueue[jamCurrentIndex], jamCurrentIndex);
+    broadcastJamEvent('queue', buildJamQueuePayload());
     if (shouldAutoplay && jamPrefs.autoPlayImported) playJamTrack(jamCurrentIndex);
   } else {
     updateJamTrackUI();
+    broadcastJamEvent('queue', { tracks: [], jamCurrentIndex: 0, updatedAt: Date.now() });
   }
 }
 function renderJamImportList() {
@@ -2346,13 +2393,14 @@ function playJamTrack(i) {
   const localIndex = localTracks.findIndex(t => t.id === track.id);
   if (localIndex >= 0) {
     playLocalTrack(localIndex);
-    broadcastJamEvent('track', { index: i, trackId: track.id });
+    broadcastJamEvent('track', { index: i, trackId: track.id, autoPlay: true, currentTime: 0 });
     showToast('🎶 Jam switched to imported track');
     return;
   }
   updateJamTrackUI(track, i);
   if (track.embedUrl) {
     window.open(track.embedUrl, '_blank', 'noopener,noreferrer');
+    broadcastJamEvent('track', { index: i, trackId: track.id, autoPlay: true, currentTime: 0 });
     showToast('🎵 Spotify playlist opened for jam control');
   }
 }
@@ -2444,6 +2492,9 @@ async function pullJamEventsFromBackend() {
     if (!response.ok) return;
     const payload = await response.json();
     const events = Array.isArray(payload?.events) ? payload.events : [];
+    if (Array.isArray(payload?.room?.queue) && payload.room.queue.length) {
+      applyRemoteQueueState({ tracks: payload.room.queue, jamCurrentIndex: payload?.room?.playback?.jamCurrentIndex || 0 });
+    }
     if (typeof payload?.latestSeq === 'number') {
       jamBackendSeq = payload.latestSeq;
       localStorage.setItem('swarlok_jam_backend_seq', String(jamBackendSeq));
@@ -2456,9 +2507,21 @@ async function pullJamEventsFromBackend() {
         persistUserScopedState({ chatMessages });
         renderChatMessages();
       }
+      if (ev.type === 'queue') {
+        applyRemoteQueueState(ev.payload || {});
+      }
       if (ev.type === 'track' && Number.isInteger(ev.payload?.index) && jamQueue[ev.payload.index]) {
         jamCurrentIndex = ev.payload.index;
-        updateJamTrackUI();
+        const selected = jamQueue[jamCurrentIndex];
+        updateJamTrackUI(selected, jamCurrentIndex);
+        const shouldAutoPlay = Boolean(ev.payload?.autoPlay);
+        if (shouldAutoPlay && ensureTrackLoadedForPlayback(selected)) {
+          audio.currentTime = Math.max(0, Number(ev.payload?.currentTime || 0));
+          isPlaying = true;
+          document.getElementById('jamPlayBtn').textContent = '⏸';
+          document.getElementById('playBtn').textContent = '⏸';
+          audio.play().catch(() => {});
+        }
       }
       if (ev.type === 'playback') {
         const nextPlay = Boolean(ev.payload?.isPlaying);
@@ -2466,6 +2529,9 @@ async function pullJamEventsFromBackend() {
         isPlaying = nextPlay;
         document.getElementById('jamPlayBtn').textContent = nextPlay ? '⏸' : '▶';
         document.getElementById('playBtn').textContent = nextPlay ? '⏸' : '▶';
+        if (!audio.src && jamQueue[jamCurrentIndex]) {
+          ensureTrackLoadedForPlayback(jamQueue[jamCurrentIndex]);
+        }
         if (audio.src && Number.isFinite(nextTime)) {
           audio.currentTime = Math.max(0, nextTime);
           if (nextPlay) audio.play().catch(() => {}); else audio.pause();
@@ -2502,21 +2568,40 @@ function wireJamRealtime() {
   persistUserScopedState({ chatMessages });
       renderChatMessages();
     }
+    if (data.type === 'queue') {
+      applyRemoteQueueState(data.payload || {});
+    }
     if (data.type === 'track' && Number.isInteger(data.payload?.index) && jamQueue[data.payload.index]) {
       jamCurrentIndex = data.payload.index;
-      updateJamTrackUI();
+      const selected = jamQueue[jamCurrentIndex];
+      updateJamTrackUI(selected, jamCurrentIndex);
+      const shouldAutoPlay = Boolean(data.payload?.autoPlay);
+      if (shouldAutoPlay && ensureTrackLoadedForPlayback(selected)) {
+        audio.currentTime = Math.max(0, Number(data.payload?.currentTime || 0));
+        isPlaying = true;
+        document.getElementById('jamPlayBtn').textContent = '⏸';
+        document.getElementById('playBtn').textContent = '⏸';
+        audio.play().catch(() => {});
+      }
     }
     if (data.type === 'playback' && typeof data.payload?.isPlaying === 'boolean') {
       isPlaying = data.payload.isPlaying;
       document.getElementById('jamPlayBtn').textContent = isPlaying ? '⏸' : '▶';
       document.getElementById('playBtn').textContent = isPlaying ? '⏸' : '▶';
+      if (!audio.src && jamQueue[jamCurrentIndex]) ensureTrackLoadedForPlayback(jamQueue[jamCurrentIndex]);
+      if (audio.src && Number.isFinite(Number(data.payload?.currentTime))) {
+        audio.currentTime = Math.max(0, Number(data.payload.currentTime));
+      }
+      if (audio.src) {
+        if (isPlaying) audio.play().catch(() => {}); else audio.pause();
+      }
     }
   };
 }
 async function connectSpotifyPlaylist() {
   const playlistUrl = prompt('Paste Spotify playlist link (https://open.spotify.com/playlist/...)');
   if (!playlistUrl) return;
-  if (!/open\.spotify\.com\/playlist\//i.test(playlistUrl)) return showToast('⚠️ Please provide a valid Spotify playlist URL');
+  if (!/(open\.spotify\.com\/playlist\/|spotify:playlist:)/i.test(playlistUrl)) return showToast('⚠️ Please provide a valid Spotify playlist URL or URI');
   try {
     const response = await fetch('/api/import/spotify', {
       method: 'POST',
@@ -2525,6 +2610,7 @@ async function connectSpotifyPlaylist() {
     });
     if (!response.ok) throw new Error(`Spotify import failed (${response.status})`);
     const payload = await response.json();
+    const playlistName = payload?.playlist?.name || 'Spotify Playlist';
     const spotifyTracks = Array.isArray(payload?.tracks) ? payload.tracks : [];
     if (!spotifyTracks.length) {
       const playlistFallback = {
@@ -2535,7 +2621,7 @@ async function connectSpotifyPlaylist() {
         size: 'stream',
         mime: 'audio/mpeg',
         embedUrl: payload?.playlist?.embedUrl || '',
-        sourceFolder: 'Spotify Playlist'
+        sourceFolder: playlistName
       };
       localTracks = [playlistFallback, ...localTracks];
       persistTracks();
@@ -2553,7 +2639,7 @@ async function connectSpotifyPlaylist() {
       mime: 'audio/mpeg',
       dataUrl: track.previewUrl || track.streamUrl || '',
       embedUrl: track.embedUrl || '',
-      sourceFolder: 'Spotify Playlist'
+      sourceFolder: playlistName
     }));
     localTracks = [...normalized, ...localTracks];
     persistTracks();

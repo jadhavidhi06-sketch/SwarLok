@@ -70,17 +70,21 @@ async function handleLocalJsonImport(request, env) {
 
 async function handleSpotifyImport(request, env) {
   const body = await request.json().catch(() => ({}));
-  const playlistUrl = String(body?.playlistUrl || '');
-  if (!/^https?:\/\/open\.spotify\.com\/playlist\//i.test(playlistUrl)) {
+  const playlistInput = String(body?.playlistUrl || '').trim();
+  const playlistId = extractSpotifyPlaylistId(playlistInput);
+  if (!playlistId) {
     return json({ ok: false, error: 'Invalid Spotify playlist URL' }, 400);
   }
 
-  const playlistId = playlistUrl.split('/playlist/')[1]?.split('?')[0] || crypto.randomUUID();
+  const playlistUrl = `https://open.spotify.com/playlist/${playlistId}`;
   const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+  const remoteMeta = await fetchSpotifyPlaylistMeta(playlistId);
   const playlistMeta = {
     id: playlistId,
     playlistUrl,
     embedUrl,
+    name: remoteMeta?.name || 'Spotify Playlist',
+    author: remoteMeta?.author || 'Spotify',
     importedAt: new Date().toISOString()
   };
   await env.MUSIC_META?.put(`playlist:${playlistId}`, JSON.stringify(playlistMeta));
@@ -91,8 +95,8 @@ async function handleSpotifyImport(request, env) {
     tracks: [
       {
         id: `spotify-${playlistId}`,
-        name: 'Spotify Playlist',
-        artist: 'Spotify',
+        name: playlistMeta.name,
+        artist: playlistMeta.author,
         embedUrl,
         duration: '--:--'
       }
@@ -184,8 +188,13 @@ async function handleJamPush(request, env) {
   };
   room.events = [...(room.events || []), normalizedEvent].slice(-300);
 
-  if (event.type === 'queue' && Array.isArray(event.payload?.queue)) {
-    room.queue = event.payload.queue.slice(0, 200);
+  if (event.type === 'queue') {
+    const incomingQueue = Array.isArray(event.payload?.queue)
+      ? event.payload.queue
+      : Array.isArray(event.payload?.tracks)
+        ? event.payload.tracks
+        : null;
+    if (incomingQueue) room.queue = incomingQueue.slice(0, 200);
   }
   if (event.type === 'playback') {
     room.playback = { ...(room.playback || {}), ...(event.payload || {}) };
@@ -244,6 +253,29 @@ function generateJamCode() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const chunk = () => Array.from({ length: 4 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
   return `JAM-${chunk()}-${chunk()}`;
+}
+
+function extractSpotifyPlaylistId(input) {
+  if (!input) return '';
+  const uriMatch = input.match(/spotify:playlist:([A-Za-z0-9]+)/i);
+  if (uriMatch?.[1]) return uriMatch[1];
+  const urlMatch = input.match(/open\.spotify\.com\/playlist\/([A-Za-z0-9]+)/i);
+  if (urlMatch?.[1]) return urlMatch[1];
+  return '';
+}
+
+async function fetchSpotifyPlaylistMeta(playlistId) {
+  try {
+    const response = await fetch(`https://open.spotify.com/oembed?url=https://open.spotify.com/playlist/${playlistId}`);
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return {
+      name: payload?.title || 'Spotify Playlist',
+      author: payload?.author_name || 'Spotify'
+    };
+  } catch {
+    return null;
+  }
 }
 
 function decodeDataUrl(dataUrl) {
