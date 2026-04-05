@@ -1,4 +1,4 @@
-name = "swarlok"
+name = "swarlok-music"
 main = "workers.js"
 compatibility_date = "2024-04-05"
 
