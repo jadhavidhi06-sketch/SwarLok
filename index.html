@@ -1714,6 +1714,7 @@ let isJamHost = false;
 let replyingToMessageId = null;
 let localJamMemberId = localStorage.getItem('swarlok_local_jam_member_id') || crypto.randomUUID();
 localStorage.setItem('swarlok_local_jam_member_id', localJamMemberId);
+let jamBackendReachability = 'unknown';
 
 
 function normalizeEmail(email) {
@@ -1792,15 +1793,27 @@ function normalizeLocalJamRoom(room, code, hostName = 'Host') {
   };
 }
 async function jamApiRequest(path, payload = {}) {
-  try {
-    const response = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-    if (response.ok) return response.json();
-    if (![404, 405, 501].includes(response.status)) return null;
-  } catch (_) {}
+  const shouldTryBackend = jamBackendReachability !== 'down';
+  if (shouldTryBackend) {
+    try {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (response.ok) {
+        jamBackendReachability = 'up';
+        return response.json();
+      }
+      if ([404, 405, 501].includes(response.status)) {
+        jamBackendReachability = 'down';
+      } else {
+        return null;
+      }
+    } catch (_) {
+      jamBackendReachability = 'down';
+    }
+  }
 
   const rooms = getLocalJamRooms();
   if (path === '/api/jam/join') {
@@ -2547,6 +2560,7 @@ function joinJamWithCode(silent = false) {
   if (!silent) showToast(`🎫 Joined room ${jamCode}`);
   jamBackendSeq = 0;
   localStorage.setItem('swarlok_jam_backend_seq', '0');
+  if (jamBackendReachability === 'down') jamBackendReachability = 'unknown';
   ensureJamRoomOnBackend().then(() => pullJamEventsFromBackend());
   broadcastJamEvent('presence');
 }
