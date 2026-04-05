@@ -1343,6 +1343,7 @@
       <div style="display:flex; gap:1rem; align-items:center;">
         <div class="jam-status"><div class="status-dot"></div> <span id="jamStatusText">Offline · 0 listeners</span></div>
         <button class="btn-sm" onclick="copyRoomCode()">Copy Link</button>
+        <button class="btn-sm" onclick="createJamInviteLink()">Create Invite Link</button>
         <button class="btn-sm btn-primary" id="jamToggleBtn" onclick="toggleJamSession()">Start Jam</button>
       </div>
     </div>
@@ -2327,10 +2328,14 @@ function refreshJamMembers() {
 }
 function joinJamWithCode(silent = false) {
   const input = document.getElementById('jamJoinCodeInput');
-  const nextCode = sanitizeJamCode(input?.value || new URLSearchParams(location.hash.split('?')[1] || '').get('code') || jamCode);
+  const hashParams = new URLSearchParams(location.hash.split('?')[1] || '');
+  const searchParams = new URLSearchParams(location.search || '');
+  const urlCode = searchParams.get('jam') || searchParams.get('code') || hashParams.get('jam') || hashParams.get('code') || '';
+  const nextCode = sanitizeJamCode(input?.value || urlCode || jamCode);
   jamCode = nextCode;
   localStorage.setItem(STORE_KEYS.jamCode, jamCode);
   persistUserScopedState({ jamCode });
+  updateJamInviteUrl(jamCode);
   renderJamCode();
   if (input) input.value = jamCode;
   if (!silent) showToast(`🎫 Joined room ${jamCode}`);
@@ -2622,8 +2627,53 @@ function renderListeners() {
   el.innerHTML = chips.map((m,i) => `<div class="listener-avatar" style="background:${colors[i % colors.length]}">${(m.name || 'U')[0].toUpperCase()}</div>`).join('') + `<span class="listener-count">${count} listening</span>`;
 }
 function copyRoomCode() {
-  navigator.clipboard?.writeText(`${location.href.split('#')[0]}#jam-section?code=${jamCode}`);
-  showToast(`🔗 Jam room link copied (${jamCode})`);
+  const shareLink = getJamShareLink(jamCode);
+  navigator.clipboard?.writeText(shareLink);
+  showToast(`🔗 Jam invite copied. Anyone with this link can listen together.`);
+}
+function getJamShareLink(code = jamCode) {
+  const safeCode = sanitizeJamCode(code);
+  const url = new URL(window.location.href);
+  url.searchParams.set('jam', safeCode);
+  url.hash = 'jam-section';
+  return url.toString();
+}
+function updateJamInviteUrl(code = jamCode) {
+  if (!history?.replaceState) return;
+  history.replaceState({}, '', getJamShareLink(code));
+}
+async function createJamInviteLink() {
+  try {
+    const response = await fetch('/api/jam/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ hostName: currentUser?.name || 'Host' })
+    });
+    if (!response.ok) throw new Error(`Jam create failed (${response.status})`);
+    const payload = await response.json();
+    if (!payload?.ok || !payload?.code) throw new Error('Jam room was not created');
+    jamCode = sanitizeJamCode(payload.code);
+    if (payload.memberId) {
+      jamBackendMemberId = payload.memberId;
+      localStorage.setItem('swarlok_jam_backend_member_id', jamBackendMemberId);
+    }
+    jamBackendSeq = 0;
+    localStorage.setItem('swarlok_jam_backend_seq', '0');
+    localStorage.setItem(STORE_KEYS.jamCode, jamCode);
+    persistUserScopedState({ jamCode });
+    renderJamCode();
+    const input = document.getElementById('jamJoinCodeInput');
+    if (input) input.value = jamCode;
+    const shareLink = getJamShareLink(jamCode);
+    updateJamInviteUrl(jamCode);
+    navigator.clipboard?.writeText(shareLink);
+    showToast('✅ Fresh jam room created. Invite link copied.');
+    ensureJamRoomOnBackend().then(() => pullJamEventsFromBackend());
+    broadcastJamEvent('presence');
+  } catch (err) {
+    console.warn(err);
+    showToast('⚠️ Could not create invite link right now.');
+  }
 }
 async function mergeAllImports() {
   showToast('🧩 Select files, then folder, then playlist to merge all into one jam queue.');
