@@ -18,8 +18,15 @@ const JAM_TTL_SECONDS = 60 * 60 * 24;
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    // Serve static assets for the root path
     if (url.pathname === '/' || url.pathname === '/index.html') {
-      return env.ASSETS.fetch(request);
+      try {
+        return await env.ASSETS.fetch(request);
+      } catch (e) {
+        // Fallback if ASSETS binding fails
+        return new Response('Asset Not Found', { status: 404 });
+      }
     }
     if (request.method === 'POST' && url.pathname === '/api/auth/register') {
       return handleAuthRegister(request, env);
