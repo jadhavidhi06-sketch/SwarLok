@@ -1,6 +1,6 @@
 name = "swarlok"
 main = "workers.js"
-compatibility_date = "2024-04-05"
+compatibility_date = "2026-04-05"
 
 # THIS IS THE MISSING PIECE
 [site]
