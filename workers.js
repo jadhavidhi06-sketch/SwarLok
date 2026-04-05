@@ -65,6 +65,10 @@ export default {
       return json({ ok: false, error: 'API route not found' }, 404);
     }
 
+    if (url.pathname === '/favicon.ico') {
+      return new Response('', { status: 204 });
+    }
+
     // 3. Static assets
     if (url.pathname.includes(".")) {
       return env.ASSETS.fetch(request);
