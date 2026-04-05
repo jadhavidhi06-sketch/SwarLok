@@ -1,0 +1,14 @@
+name = "swarlok"
+main = "backend/workers.js"
+compatibility_date = "2024-04-05"
+
+[site]
+bucket = "./"
+
+[[kv_namespaces]]
+binding = "MUSIC_META"
+id = "2d0d2676da544d23a131bcd514c1a28c"
+
+[[r2_buckets]]
+binding = "MUSIC_BUCKET"
+bucket_name = "music-bucket"
