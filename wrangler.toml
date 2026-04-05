@@ -3,7 +3,7 @@ main = "workers.js"
 compatibility_date = "2024-04-05"
 
 [site]
-bucket = "index.html"
+bucket = "/index.html"
 
 [[kv_namespaces]]
 binding = "MUSIC_META"
