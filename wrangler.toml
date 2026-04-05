@@ -3,7 +3,8 @@ main = "workers.js"
 compatibility_date = "2024-04-05"
 
 [site]
-bucket = "./"
+bucket = "."
+include = ["index.html", "assets/**/*"] # Explicitly tell it to include your HTML
 
 [[kv_namespaces]]
 binding = "MUSIC_META"
