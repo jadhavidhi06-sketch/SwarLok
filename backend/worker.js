@@ -7,6 +7,8 @@
  * - POST /api/import/spotify
  * - POST /api/jam/create
  * - POST /api/jam/join
+ * - POST /api/jam/invite/create
+ * - POST /api/jam/invite/resolve
  * - POST /api/jam/push
  * - POST /api/jam/pull
  */
@@ -33,6 +35,12 @@ export default {
     }
     if (request.method === 'POST' && url.pathname === '/api/jam/join') {
       return handleJamJoin(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/jam/invite/create') {
+      return handleJamInviteCreate(request, env);
+    }
+    if (request.method === 'POST' && url.pathname === '/api/jam/invite/resolve') {
+      return handleJamInviteResolve(request, env);
     }
     if (request.method === 'POST' && url.pathname === '/api/jam/push') {
       return handleJamPush(request, env);
@@ -249,6 +257,77 @@ async function handleJamJoin(request, env) {
   return json({ ok: true, code, memberId, room });
 }
 
+async function handleJamInviteCreate(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const code = sanitizeJamCode(body?.code);
+  const createdByMemberId = String(body?.memberId || '').trim();
+  const createdByName = sanitizeName(body?.name || 'Host');
+  const expiresInMinutes = Math.min(Math.max(Number(body?.expiresInMinutes || 120), 5), 60 * 24 * 7);
+  if (!code) return json({ ok: false, error: 'Invalid room code' }, 400);
+
+  const room = await getJamRoom(env, code);
+  if (!room) return json({ ok: false, error: 'Room not found' }, 404);
+
+  const now = Date.now();
+  const token = crypto.randomUUID().replace(/-/g, '');
+  const expiresAt = now + expiresInMinutes * 60_000;
+  const invite = {
+    token,
+    code,
+    createdAt: now,
+    expiresAt,
+    createdByMemberId: createdByMemberId || null,
+    createdByName
+  };
+  await putJamInvite(env, invite);
+  return json({
+    ok: true,
+    invite: {
+      token,
+      code,
+      expiresAt,
+      createdByName,
+      inviteUrl: `/` + `?invite=${token}#jam-section`
+    }
+  });
+}
+
+async function handleJamInviteResolve(request, env) {
+  const body = await request.json().catch(() => ({}));
+  const token = String(body?.token || '').trim();
+  const name = sanitizeName(body?.name || 'Guest');
+  if (!token) return json({ ok: false, error: 'Invite token is required' }, 400);
+
+  const invite = await getJamInvite(env, token);
+  if (!invite) return json({ ok: false, error: 'Invite not found' }, 404);
+  if (Date.now() > Number(invite.expiresAt || 0)) {
+    return json({ ok: false, error: 'Invite has expired' }, 410);
+  }
+
+  const code = sanitizeJamCode(invite.code);
+  if (!code) return json({ ok: false, error: 'Invite is invalid' }, 400);
+  const room = await getJamRoom(env, code);
+  if (!room) return json({ ok: false, error: 'Room not found' }, 404);
+
+  const memberId = crypto.randomUUID();
+  room.members = (room.members || []).filter(m => Date.now() - m.ts < 60_000 * 10);
+  room.members.push({ id: memberId, name, ts: Date.now() });
+  room.updatedAt = Date.now();
+  await putJamRoom(env, room);
+
+  return json({
+    ok: true,
+    code,
+    memberId,
+    room,
+    invite: {
+      token,
+      createdByName: invite.createdByName || 'Host',
+      expiresAt: Number(invite.expiresAt || 0)
+    }
+  });
+}
+
 async function handleJamPush(request, env) {
   const body = await request.json().catch(() => ({}));
   const code = sanitizeJamCode(body?.code);
@@ -326,6 +405,17 @@ async function putJamRoom(env, room) {
   await env.MUSIC_META?.put(`jam:${room.code}`, JSON.stringify(room), { expirationTtl: JAM_TTL_SECONDS });
 }
 
+async function getJamInvite(env, token) {
+  const raw = await env.MUSIC_META?.get(`jam-invite:${token}`);
+  if (!raw) return null;
+  return JSON.parse(raw);
+}
+
+async function putJamInvite(env, invite) {
+  const ttlSeconds = Math.max(60, Math.floor((Number(invite.expiresAt || Date.now()) - Date.now()) / 1000));
+  await env.MUSIC_META?.put(`jam-invite:${invite.token}`, JSON.stringify(invite), { expirationTtl: ttlSeconds });
+}
+
 function sanitizeJamCode(code) {
   const cleaned = String(code || '').toUpperCase().replace(/[^A-Z0-9-]/g, '').trim();
   return cleaned || '';
@@ -377,7 +467,12 @@ function decodeDataUrl(dataUrl) {
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' }
+    headers: { 
+      'Content-Type': 'application/json; charset=utf-8',
+      'Access-Control-Allow-Origin': '*', 
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    }
   });
 }
 
