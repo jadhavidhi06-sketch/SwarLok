@@ -1601,6 +1601,17 @@ localStorage.setItem('swarlok_member_id', jamMemberId);
 const jamChannel = ('BroadcastChannel' in window) ? new BroadcastChannel('swarlok-jam-sync') : null;
 let jamMembers = {};
 
+const MEDIA_DB = {
+  name: 'swarlok_media_db',
+  version: 1,
+  store: 'track_media'
+};
+let mediaDbPromise = null;
+let jamBackendMemberId = localStorage.getItem('swarlok_jam_backend_member_id') || '';
+let jamBackendSeq = Number(localStorage.getItem('swarlok_jam_backend_seq') || 0);
+let jamPollTimer = null;
+let jamPullInFlight = false;
+
 
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
@@ -1907,7 +1918,7 @@ function persistTracks() {
     sourceFolder: track.sourceFolder || 'Ungrouped',
     relativePath: track.relativePath || '',
     embedUrl: track.embedUrl || '',
-    dataUrl: track.dataUrl || ''
+    hasMedia: Boolean(track.dataUrl)
   }));
   try {
     localStorage.setItem(STORE_KEYS.tracks, JSON.stringify(tracksForStorage));
@@ -1920,6 +1931,62 @@ function persistTracks() {
   renderQueue();
   updateTrackDisplay();
 }
+
+function openMediaDatabase() {
+  if (mediaDbPromise) return mediaDbPromise;
+  mediaDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(MEDIA_DB.name, MEDIA_DB.version);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(MEDIA_DB.store)) {
+        db.createObjectStore(MEDIA_DB.store, { keyPath: 'id' });
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Failed to open media database'));
+  });
+  return mediaDbPromise;
+}
+async function upsertTrackMedia(track) {
+  if (!track?.id || !track?.dataUrl) return;
+  const db = await openMediaDatabase();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(MEDIA_DB.store, 'readwrite');
+    tx.objectStore(MEDIA_DB.store).put({
+      id: track.id,
+      dataUrl: track.dataUrl,
+      mime: track.mime || 'audio/mpeg',
+      updatedAt: Date.now()
+    });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Failed to save track media'));
+  });
+}
+async function deleteTrackMedia(trackId) {
+  if (!trackId) return;
+  const db = await openMediaDatabase();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(MEDIA_DB.store, 'readwrite');
+    tx.objectStore(MEDIA_DB.store).delete(trackId);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Failed to delete track media'));
+  });
+}
+async function hydrateTracksFromIndexedDB() {
+  if (!localTracks.length) return;
+  const db = await openMediaDatabase();
+  await Promise.all(localTracks.map(track => new Promise((resolve) => {
+    if (!track?.id || track.dataUrl || !track.hasMedia) return resolve();
+    const tx = db.transaction(MEDIA_DB.store, 'readonly');
+    const req = tx.objectStore(MEDIA_DB.store).get(track.id);
+    req.onsuccess = () => {
+      if (req.result?.dataUrl) track.dataUrl = req.result.dataUrl;
+      resolve();
+    };
+    req.onerror = () => resolve();
+  })));
+}
+
 function isSupportedMusicFile(file) {
   const name = (file.name || '').toLowerCase();
   const knownAudioExtensions = ['.mp3', '.mp4', '.m4a', '.wav', '.flac', '.aac', '.ogg', '.oga', '.opus', '.webm', '.wma', '.aiff', '.alac'];
@@ -1967,6 +2034,7 @@ async function importMusicFiles(files, source) {
   const supported = files.filter(isSupportedMusicFile);
   if (!supported.length) return showToast('⚠️ No supported audio files found in selection');
   const imported = await Promise.all(supported.map(fileToDataTrack));
+  await Promise.all(imported.map(track => upsertTrackMedia(track).catch(() => null)));
   localTracks = [...localTracks, ...imported];
   persistTracks();
   renderTrackList();
@@ -2109,6 +2177,7 @@ function deleteTrack(id) {
   const idx = localTracks.findIndex(t => t.id === id);
   if (idx < 0) return;
   const [removed] = localTracks.splice(idx, 1);
+  deleteTrackMedia(id).catch(() => null);
   if (removed?.objectUrl) {
     URL.revokeObjectURL(removed.objectUrl);
     trackObjectUrls.delete(removed.objectUrl);
@@ -2236,8 +2305,7 @@ function updateJamTrackUI(track = null, idx = jamCurrentIndex) {
   renderJamImportList();
 }
 function broadcastJamEvent(type, payload = {}) {
-  if (!jamChannel || !jamCode) return;
-  jamChannel.postMessage({
+  if (jamChannel && jamCode) jamChannel.postMessage({
     jamCode,
     type,
     payload,
@@ -2247,6 +2315,7 @@ function broadcastJamEvent(type, payload = {}) {
       ts: Date.now()
     }
   });
+  pushJamEventToBackend(type, payload);
 }
 function refreshJamMembers() {
   const now = Date.now();
@@ -2265,6 +2334,9 @@ function joinJamWithCode(silent = false) {
   renderJamCode();
   if (input) input.value = jamCode;
   if (!silent) showToast(`🎫 Joined room ${jamCode}`);
+  jamBackendSeq = 0;
+  localStorage.setItem('swarlok_jam_backend_seq', '0');
+  ensureJamRoomOnBackend().then(() => pullJamEventsFromBackend());
   broadcastJamEvent('presence');
 }
 function playJamTrack(i) {
@@ -2295,7 +2367,7 @@ function jamTogglePlay() {
   }
   togglePlay();
   document.getElementById('jamPlayBtn').textContent = isPlaying ? '⏸' : '▶';
-  broadcastJamEvent('playback', { isPlaying, currentTime: audio.currentTime || 0, trackId: jamQueue[jamCurrentIndex]?.id });
+  broadcastJamEvent('playback', { isPlaying, currentTime: audio.currentTime || 0, trackId: jamQueue[jamCurrentIndex]?.id, at: Date.now() });
 }
 function jamPrevTrack() {
   if (!jamQueue.length) return;
@@ -2316,6 +2388,107 @@ function syncJamProgress() {
   current.textContent = formatTime(Math.floor(audio.currentTime || 0));
   duration.textContent = formatTime(Math.floor(audio.duration || 0));
 }
+
+async function ensureJamRoomOnBackend() {
+  try {
+    const response = await fetch('/api/jam/join', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: jamCode, name: currentUser?.name || 'Guest', createIfMissing: true })
+    });
+    if (!response.ok) return false;
+    const payload = await response.json();
+    if (payload?.memberId) {
+      jamBackendMemberId = payload.memberId;
+      localStorage.setItem('swarlok_jam_backend_member_id', jamBackendMemberId);
+    }
+    return true;
+  } catch (err) {
+    console.warn('Unable to ensure jam room on backend', err);
+    return false;
+  }
+}
+async function pushJamEventToBackend(type, payload = {}) {
+  if (!jamCode) return;
+  if (!jamBackendMemberId) {
+    const ready = await ensureJamRoomOnBackend();
+    if (!ready) return;
+  }
+  try {
+    await fetch('/api/jam/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: jamCode,
+        memberId: jamBackendMemberId,
+        event: {
+          type,
+          memberName: currentUser?.name || 'Guest',
+          payload
+        }
+      })
+    });
+  } catch (err) {
+    console.warn('Unable to push jam event', err);
+  }
+}
+async function pullJamEventsFromBackend() {
+  if (jamPullInFlight || !jamCode) return;
+  jamPullInFlight = true;
+  try {
+    const response = await fetch('/api/jam/pull', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: jamCode, since: jamBackendSeq || 0 })
+    });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const events = Array.isArray(payload?.events) ? payload.events : [];
+    if (typeof payload?.latestSeq === 'number') {
+      jamBackendSeq = payload.latestSeq;
+      localStorage.setItem('swarlok_jam_backend_seq', String(jamBackendSeq));
+    }
+    for (const ev of events) {
+      if (!ev || ev.memberId === jamBackendMemberId) continue;
+      if (ev.type === 'chat' && ev.payload?.item) {
+        chatMessages.push(ev.payload.item);
+        localStorage.setItem(STORE_KEYS.chat, JSON.stringify(chatMessages));
+        persistUserScopedState({ chatMessages });
+        renderChatMessages();
+      }
+      if (ev.type === 'track' && Number.isInteger(ev.payload?.index) && jamQueue[ev.payload.index]) {
+        jamCurrentIndex = ev.payload.index;
+        updateJamTrackUI();
+      }
+      if (ev.type === 'playback') {
+        const nextPlay = Boolean(ev.payload?.isPlaying);
+        const nextTime = Number(ev.payload?.currentTime || 0);
+        isPlaying = nextPlay;
+        document.getElementById('jamPlayBtn').textContent = nextPlay ? '⏸' : '▶';
+        document.getElementById('playBtn').textContent = nextPlay ? '⏸' : '▶';
+        if (audio.src && Number.isFinite(nextTime)) {
+          audio.currentTime = Math.max(0, nextTime);
+          if (nextPlay) audio.play().catch(() => {}); else audio.pause();
+        }
+      }
+    }
+    const memberCount = Array.isArray(payload?.room?.members) ? payload.room.members.length : 0;
+    if (memberCount) {
+      jamState.listeners = memberCount;
+      saveJamState();
+      renderJamState();
+    }
+  } catch (err) {
+    console.warn('Unable to pull jam events', err);
+  } finally {
+    jamPullInFlight = false;
+  }
+}
+function startJamPolling() {
+  if (jamPollTimer) clearInterval(jamPollTimer);
+  jamPollTimer = setInterval(pullJamEventsFromBackend, 1800);
+}
+
 function wireJamRealtime() {
   if (!jamChannel) return;
   jamChannel.onmessage = (event) => {
@@ -2624,36 +2797,42 @@ const observer = new IntersectionObserver(entries => entries.forEach(e => e.isIn
 document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
 
 // ─── INIT ───
-renderThemeMenu();
-setVibe(savedTheme);
-if (currentUser) hydrateStateForUser(currentUser);
-renderQueue();
-renderEQ();
-renderTrackList();
-renderChatMessages();
-renderListeners();
-renderJamState();
-renderJamCode();
-initJamPreferencesUI();
-syncJamFromImports();
-wireJamRealtime();
-joinJamWithCode(true);
-setInterval(() => {
-  jamMembers[jamMemberId] = { id: jamMemberId, name: currentUser?.name || 'You', ts: Date.now() };
-  broadcastJamEvent('presence');
-  refreshJamMembers();
-}, 5000);
-renderSoulmates();
-renderChips('genreChips', GENRES, 'genres');
-renderChips('instrumentChips', INSTRUMENTS, 'instruments');
-renderChips('triggerChips', TRIGGERS, 'triggers');
-setupChipEvents();
-updateTrackDisplay();
-updateProfileTab();
-updateNavbarAuth();
-renderRealtimeData();
-renderBackendSyncStatus();
-syncPendingToBackend();
+async function bootstrapApp() {
+  renderThemeMenu();
+  setVibe(savedTheme);
+  if (currentUser) hydrateStateForUser(currentUser);
+  await hydrateTracksFromIndexedDB().catch(() => null);
+  renderQueue();
+  renderEQ();
+  renderTrackList();
+  renderChatMessages();
+  renderListeners();
+  renderJamState();
+  renderJamCode();
+  initJamPreferencesUI();
+  syncJamFromImports();
+  wireJamRealtime();
+  joinJamWithCode(true);
+  startJamPolling();
+  setInterval(() => {
+    jamMembers[jamMemberId] = { id: jamMemberId, name: currentUser?.name || 'You', ts: Date.now() };
+    broadcastJamEvent('presence');
+    refreshJamMembers();
+  }, 5000);
+  renderSoulmates();
+  renderChips('genreChips', GENRES, 'genres');
+  renderChips('instrumentChips', INSTRUMENTS, 'instruments');
+  renderChips('triggerChips', TRIGGERS, 'triggers');
+  setupChipEvents();
+  updateTrackDisplay();
+  updateProfileTab();
+  updateNavbarAuth();
+  renderRealtimeData();
+  renderBackendSyncStatus();
+  syncPendingToBackend();
+}
+
+bootstrapApp();
 </script>
 </body>
 </html>
