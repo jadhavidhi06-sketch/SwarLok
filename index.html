@@ -2234,7 +2234,7 @@ function renderEQ() {
   const wrap = document.getElementById('eqBands');
   const labels = ['60Hz','250Hz','500Hz','1kHz','4kHz','8kHz','16kHz'];
   wrap.style.cssText = 'display:flex; gap:1.5rem; align-items:flex-end; justify-content:center;';
-  wrap.innerHTML = labels.map((l,i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;"><span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--accent);" id="eq-val-${i}">0</span><input type="range" min="-12" max="12" value="0" step="1" style="writing-mode:vertical-lr; direction:rtl; height:100px; cursor:pointer; -webkit-appearance:slider-vertical;" oninput="updateEQ(${i},this.value)"><span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text3);">${l}</span></div>`).join('');
+  wrap.innerHTML = labels.map((l,i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:0.5rem;"><span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--accent);" id="eq-val-${i}">0</span><input type="range" min="-12" max="12" value="0" step="1" style="writing-mode:vertical-lr; direction:rtl; height:100px; cursor:pointer; " oninput="updateEQ(${i},this.value)"><span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text3);">${l}</span></div>`).join('');
 }
 function updateEQ(band, val) { document.getElementById(`eq-val-${band}`).textContent = `${val > 0 ? '+' : ''}${val}dB`; }
 
@@ -2348,7 +2348,7 @@ function renderBackendSyncStatus() {
     : 'Backend Sync: All uploads saved';
 }
 async function sendTracksToBackend(tracks) {
-  const response = await fetch('/api/import/local-json', {
+  const response = await fetch(BACKEND_URL + '/api/import/local-json', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tracks })
