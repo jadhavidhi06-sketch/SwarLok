@@ -2,9 +2,8 @@ name = "swarlok"
 main = "workers.js"
 compatibility_date = "2026-04-05"
 
-# THIS IS THE MISSING PIECE
-[site]
-bucket = "./"
+[assets]
+directory = "./"   # 👈 THIS replaces [site]
 
 [[kv_namespaces]]
 binding = "MUSIC_META"
