@@ -1717,6 +1717,7 @@ let localJamMemberId = localStorage.getItem('swarlok_local_jam_member_id') || cr
 localStorage.setItem('swarlok_local_jam_member_id', localJamMemberId);
 let jamBackendReachability = 'unknown';
 let authBackendReachability = 'unknown';
+const BACKEND_URL = 'https://swarlok.jadhavidhi06.workers.dev';
 
 
 function normalizeEmail(email) {
@@ -1743,7 +1744,7 @@ async function authApiRequest(path, payload = {}) {
   const shouldTryBackend = authBackendReachability !== 'down';
   if (shouldTryBackend) {
     try {
-      const response = await fetch(path, {
+      const response = await fetch(BACKEND_URL + path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1753,11 +1754,7 @@ async function authApiRequest(path, payload = {}) {
         authBackendReachability = 'up';
         return data;
       }
-      if ([404, 405, 501].includes(response.status)) {
-        authBackendReachability = 'down';
-      } else {
-        return data;
-      }
+      authBackendReachability = 'down';
     } catch (_) {
       authBackendReachability = 'down';
     }
@@ -1882,7 +1879,7 @@ async function jamApiRequest(path, payload = {}) {
   const shouldTryBackend = jamBackendReachability !== 'down';
   if (shouldTryBackend) {
     try {
-      const response = await fetch(path, {
+      const response = await fetch(BACKEND_URL + path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -1891,11 +1888,7 @@ async function jamApiRequest(path, payload = {}) {
         jamBackendReachability = 'up';
         return response.json();
       }
-      if ([404, 405, 501].includes(response.status)) {
-        jamBackendReachability = 'down';
-      } else {
-        return null;
-      }
+      jamBackendReachability = 'down';
     } catch (_) {
       jamBackendReachability = 'down';
     }
@@ -2923,7 +2916,7 @@ async function connectSpotifyPlaylist() {
   if (!playlistUrl) return;
   if (!/open\.spotify\.com\/playlist\//i.test(playlistUrl)) return showToast('⚠️ Please provide a valid Spotify playlist URL');
   try {
-    const response = await fetch('/api/import/spotify', {
+    const response = await fetch(BACKEND_URL + '/api/import/spotify', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ playlistUrl })
