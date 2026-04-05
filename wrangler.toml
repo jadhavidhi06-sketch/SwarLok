@@ -1,5 +1,5 @@
 name = "swarlok"
-main = "backend/workers.js"
+main = "Backend/workers.js"
 compatibility_date = "2024-04-05"
 
 [site]
