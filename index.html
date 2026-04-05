@@ -1712,6 +1712,7 @@ let jamPollTimer = null;
 let jamPullInFlight = false;
 let jamHostBackendId = localStorage.getItem('swarlok_jam_host_backend_id') || '';
 let isJamHost = false;
+let lastJamPlaybackState = { currentTime: 0, isPlaying: false };
 let replyingToMessageId = null;
 let localJamMemberId = localStorage.getItem('swarlok_local_jam_member_id') || crypto.randomUUID();
 localStorage.setItem('swarlok_local_jam_member_id', localJamMemberId);
@@ -2881,9 +2882,43 @@ async function pullJamEventsFromBackend() {
     jamPullInFlight = false;
   }
 }
+async function syncJamStateWithBackend() {
+  if (!jamCode) return;
+  if (!jamBackendMemberId) {
+    const ready = await ensureJamRoomOnBackend();
+    if (!ready) return;
+  }
+
+  if (isJamHost) {
+    const currentState = {
+      currentTime: Math.floor(audio.currentTime || 0),
+      isPlaying: !audio.paused
+    };
+    if (
+      currentState.currentTime !== lastJamPlaybackState.currentTime ||
+      currentState.isPlaying !== lastJamPlaybackState.isPlaying
+    ) {
+      await pushJamEventToBackend('playback', {
+        isPlaying: currentState.isPlaying,
+        currentTime: currentState.currentTime,
+        trackId: jamQueue[jamCurrentIndex]?.id,
+        at: Date.now()
+      });
+      lastJamPlaybackState = currentState;
+    }
+  }
+
+  await pullJamEventsFromBackend();
+}
 function startJamPolling() {
-  if (jamPollTimer) clearInterval(jamPollTimer);
-  jamPollTimer = setInterval(pullJamEventsFromBackend, 1800);
+  if (jamPollTimer) return;
+  syncJamStateWithBackend().catch(() => null);
+  jamPollTimer = setInterval(syncJamStateWithBackend, 3000);
+}
+function stopJamPolling() {
+  if (!jamPollTimer) return;
+  clearInterval(jamPollTimer);
+  jamPollTimer = null;
 }
 
 function wireJamRealtime() {
@@ -2980,6 +3015,11 @@ function toggleJamSession() {
   saveJamState();
   saveAnalytics();
   renderJamState();
+  if (jamState.live) {
+    startJamPolling();
+  } else {
+    stopJamPolling();
+  }
   showToast(jamState.live ? '🎵 Jam session started and saved' : '🛑 Jam session ended');
 }
 function renderJamState() {
